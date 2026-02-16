@@ -222,13 +222,18 @@ class _HomePageState extends ConsumerState<HomePage> {
       for (var i = locations.length - 1; i >= 0; i--) {
         final loc = locations[i];
 
-        // bg.BackgroundGeolocation.locations returns List<Map>, not List<bg.Location>
-        // So we need to access the data using Map keys
-        final coords = loc['coords'] as Map<String, dynamic>?;
-        final activity = loc['activity'] as Map<String, dynamic>?;
-        final timestampStr = loc['timestamp'] as String?;
+        // bg.BackgroundGeolocation.locations returns List<Map<Object?, Object?>>
+        // We must convert (not cast) to Map<String, dynamic> using .from()
+        final coordsRaw = loc['coords'];
+        final activityRaw = loc['activity'];
+        final timestampStr = loc['timestamp']?.toString();
 
-        if (coords == null) continue;
+        if (coordsRaw == null || coordsRaw is! Map) continue;
+
+        final coords = Map<String, dynamic>.from(coordsRaw);
+        final activity = activityRaw is Map
+            ? Map<String, dynamic>.from(activityRaw)
+            : <String, dynamic>{};
 
         DateTime timestamp;
         try {
@@ -245,7 +250,7 @@ class _HomePageState extends ConsumerState<HomePage> {
           timestamp: timestamp,
           speed: (coords['speed'] as num?)?.toDouble(),
           accuracy: (coords['accuracy'] as num?)?.toDouble(),
-          activity: (activity?['type'] as String?) ?? 'unknown',
+          activity: (activity['type'] as String?) ?? 'unknown',
         );
 
         ref.read(locationProvider.notifier).addLocation(locationData);
