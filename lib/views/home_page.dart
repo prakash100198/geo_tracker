@@ -77,7 +77,9 @@ class _HomePageState extends ConsumerState<HomePage> {
   bool _isInitialized = false;
   String _currentActivity = 'unknown';
   bool _isTraveling = false;
-  DateTime _lastHeartbeatTime = DateTime.now().subtract(const Duration(hours: 1));
+  DateTime _lastHeartbeatTime = DateTime.now().subtract(
+    const Duration(hours: 1),
+  );
   int _totalTriggers = 0;
   int _totalHeartbeats = 0;
 
@@ -122,17 +124,14 @@ class _HomePageState extends ConsumerState<HomePage> {
         // WHY: 200m means app only wakes when user moves significantly
         // IMPACT: Reduces wake-ups from ~288/day to ~100-120/day
         distanceFilter: 200.0, // meters
-
         // 2. STATIONARY RADIUS - Geofence around stopped location
         // WHY: Once stationary, creates 100m geofence. Only wake if user exits it.
         // IMPACT: Prevents wake-ups from GPS drift when sitting at cafe/home
         stationaryRadius: 100, // meters
-
         // 3. STOP TIMEOUT - Time before considering "stationary"
         // WHY: 5 min means user must be still for 5 min before we consider it a "significant place"
         // IMPACT: Filters out quick stops (traffic lights, grocery pickup)
         stopTimeout: 5, // minutes
-
         // 4. DISABLE ELASTICITY - Don't auto-adjust distance filter
         // WHY: Plugin normally reduces distanceFilter when stationary. We want consistent behavior.
         // IMPACT: Predictable wake-up behavior, easier to optimize
@@ -147,7 +146,6 @@ class _HomePageState extends ConsumerState<HomePage> {
         // WHY: Identifies in_vehicle, on_bicycle, walking, still
         // IMPACT: Client code can suppress heartbeats during travel
         activityRecognitionInterval: 60000, // 1 minute
-
         // ═══════════════════════════════════════════════════
         // ⏰ HEARTBEAT BACKUP: Ensure regular updates
         // ═══════════════════════════════════════════════════
@@ -157,7 +155,6 @@ class _HomePageState extends ConsumerState<HomePage> {
         // WHY: Ensures at least one heartbeat every 15 min when stationary
         // IMPACT: User at home for 8h = 32 heartbeats (8*60/15)
         heartbeatInterval: intervalMinutes * 60, // seconds
-
         // ═══════════════════════════════════════════════════
         // 🔋 ACCURACY SETTINGS: Balance accuracy vs battery
         // ═══════════════════════════════════════════════════
@@ -176,16 +173,13 @@ class _HomePageState extends ConsumerState<HomePage> {
         // IMPACT: Limits how often Android can wake the app
         locationUpdateInterval: intervalMinutes * 60 * 1000, // milliseconds
         fastestLocationUpdateInterval: 300000, // 5 min minimum
-
         // ═══════════════════════════════════════════════════
         // 🔥 BACKGROUND OPERATION
         // ═══════════════════════════════════════════════════
-
         stopOnTerminate: false, // Keep tracking when app closed
         startOnBoot: true, // Resume after phone restart
         foregroundService: true, // Required for Android background
         enableHeadless: true, // Critical for background operation
-
         // iOS specific
         pausesLocationUpdatesAutomatically: false,
         activityType: bg.Config.ACTIVITY_TYPE_OTHER,
@@ -354,7 +348,9 @@ class _HomePageState extends ConsumerState<HomePage> {
     _totalTriggers++; // Count every wake-up
 
     print('🔔 TRIGGER #$_totalTriggers: Location event');
-    print('   📍 Coords: ${location.coords.latitude}, ${location.coords.longitude}');
+    print(
+      '   📍 Coords: ${location.coords.latitude}, ${location.coords.longitude}',
+    );
     print('   🏃 isMoving: ${location.isMoving}');
     print('   ⚡ speed: ${location.coords.speed ?? 0} m/s');
     print('   🎯 activity: $_currentActivity');
@@ -384,9 +380,13 @@ class _HomePageState extends ConsumerState<HomePage> {
     }
 
     // CHECK 4: Don't send if last heartbeat was < 15 min ago
-    final timeSinceLastHeartbeat = DateTime.now().difference(_lastHeartbeatTime);
+    final timeSinceLastHeartbeat = DateTime.now().difference(
+      _lastHeartbeatTime,
+    );
     if (timeSinceLastHeartbeat.inMinutes < 15) {
-      print('   ❌ SKIP: Last heartbeat was ${timeSinceLastHeartbeat.inMinutes} min ago');
+      print(
+        '   ❌ SKIP: Last heartbeat was ${timeSinceLastHeartbeat.inMinutes} min ago',
+      );
       return;
     }
 
@@ -400,7 +400,9 @@ class _HomePageState extends ConsumerState<HomePage> {
     _lastHeartbeatTime = DateTime.now();
 
     print('💓 HEARTBEAT #$_totalHeartbeats sent');
-    print('   📊 Efficiency: $_totalHeartbeats heartbeats / $_totalTriggers triggers = ${(_totalHeartbeats / _totalTriggers * 100).toStringAsFixed(1)}%');
+    print(
+      '   📊 Efficiency: $_totalHeartbeats heartbeats / $_totalTriggers triggers = ${(_totalHeartbeats / _totalTriggers * 100).toStringAsFixed(1)}%',
+    );
 
     final locationData = LocationData(
       latitude: location.coords.latitude,
@@ -421,7 +423,9 @@ class _HomePageState extends ConsumerState<HomePage> {
     _totalTriggers++;
 
     final isMoving = location.isMoving;
-    print('🔔 TRIGGER #$_totalTriggers: Motion change → ${isMoving ? "MOVING" : "STATIONARY"}');
+    print(
+      '🔔 TRIGGER #$_totalTriggers: Motion change → ${isMoving ? "MOVING" : "STATIONARY"}',
+    );
     print('   🚗 traveling: $_isTraveling');
 
     // ═══════════════════════════════════════════════════
@@ -446,7 +450,9 @@ class _HomePageState extends ConsumerState<HomePage> {
     _totalTriggers++;
 
     print('🔔 TRIGGER #$_totalTriggers: Activity change');
-    print('   🎯 Activity: ${event.activity} (confidence: ${event.confidence}%)');
+    print(
+      '   🎯 Activity: ${event.activity} (confidence: ${event.confidence}%)',
+    );
 
     setState(() {
       _currentActivity = event.activity;
