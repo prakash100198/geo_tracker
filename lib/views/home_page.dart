@@ -62,9 +62,6 @@ final locationProvider =
 
 final isTrackingProvider = StateProvider<bool>((ref) => false);
 final currentActivityProvider = StateProvider<String>((ref) => 'unknown');
-final trackingIntervalProvider = StateProvider<int>(
-  (ref) => 5,
-); // Default 5 minutes
 
 class HomePage extends ConsumerStatefulWidget {
   const HomePage({super.key});
@@ -83,10 +80,78 @@ class _HomePageState extends ConsumerState<HomePage> {
   int _totalTriggers = 0;
   int _totalHeartbeats = 0;
 
+  // 24-hour stats tracking
+  int _triggers24h = 0;
+  int _heartbeats24h = 0;
+  DateTime? _stats24hStartTime;
+
   @override
   void initState() {
     super.initState();
+    _load24hStats();
     _initBackgroundGeolocation();
+  }
+
+  // ═══════════════════════════════════════════════════
+  // 24-HOUR STATS PERSISTENCE
+  // ═══════════════════════════════════════════════════
+
+  Future<void> _load24hStats() async {
+    final prefs = await SharedPreferences.getInstance();
+
+    final startTimeMs = prefs.getInt('stats_start_time');
+    final triggers = prefs.getInt('triggers_24h') ?? 0;
+    final heartbeats = prefs.getInt('heartbeats_24h') ?? 0;
+
+    if (startTimeMs != null) {
+      final startTime = DateTime.fromMillisecondsSinceEpoch(startTimeMs);
+      final elapsed = DateTime.now().difference(startTime);
+
+      // Reset if > 24h
+      if (elapsed.inHours >= 24) {
+        print('🔄 Resetting 24h stats (elapsed: ${elapsed.inHours}h)');
+        await _reset24hStats();
+      } else {
+        setState(() {
+          _stats24hStartTime = startTime;
+          _triggers24h = triggers;
+          _heartbeats24h = heartbeats;
+        });
+        print(
+          '📊 Loaded 24h stats: $triggers triggers, $heartbeats heartbeats',
+        );
+      }
+    } else {
+      // First time - initialize
+      await _reset24hStats();
+    }
+  }
+
+  Future<void> _reset24hStats() async {
+    final prefs = await SharedPreferences.getInstance();
+    final now = DateTime.now();
+
+    await prefs.setInt('stats_start_time', now.millisecondsSinceEpoch);
+    await prefs.setInt('triggers_24h', 0);
+    await prefs.setInt('heartbeats_24h', 0);
+
+    setState(() {
+      _stats24hStartTime = now;
+      _triggers24h = 0;
+      _heartbeats24h = 0;
+    });
+  }
+
+  Future<void> _increment24hTriggers() async {
+    final prefs = await SharedPreferences.getInstance();
+    _triggers24h++;
+    await prefs.setInt('triggers_24h', _triggers24h);
+  }
+
+  Future<void> _increment24hHeartbeats() async {
+    final prefs = await SharedPreferences.getInstance();
+    _heartbeats24h++;
+    await prefs.setInt('heartbeats_24h', _heartbeats24h);
   }
 
   Future<void> _initBackgroundGeolocation() async {
@@ -104,11 +169,14 @@ class _HomePageState extends ConsumerState<HomePage> {
     // Heartbeat listener
     bg.BackgroundGeolocation.onHeartbeat(_onHeartbeat);
 
-    // Get initial interval (for heartbeat backup)
-    final intervalMinutes = ref.read(trackingIntervalProvider);
+    // Fixed 15-minute heartbeat interval (no longer user-configurable)
+    const heartbeatMinutes = 15;
+    const heartbeatSeconds = heartbeatMinutes * 60; // 900 seconds
+    const heartbeatMillis = heartbeatMinutes * 60 * 1000; // 900000 ms
 
     print('🎯 Configuring SMART PRESENCE DETECTION system');
     print('📍 Strategy: Motion-based + Activity detection');
+    print('⏱️  Fixed heartbeat: $heartbeatMinutes minutes');
     print('🎯 Target: ~100 heartbeats/day, minimize wake-ups');
 
     // Configure the plugin for SMART PRESENCE DETECTION
@@ -154,7 +222,7 @@ class _HomePageState extends ConsumerState<HomePage> {
         // 6. HEARTBEAT INTERVAL - Safety net for long stays
         // WHY: Ensures at least one heartbeat every 15 min when stationary
         // IMPACT: User at home for 8h = 32 heartbeats (8*60/15)
-        heartbeatInterval: intervalMinutes * 60, // seconds
+        heartbeatInterval: heartbeatSeconds, // 900 seconds = 15 minutes
         // ═══════════════════════════════════════════════════
         // 🔋 ACCURACY SETTINGS: Balance accuracy vs battery
         // ═══════════════════════════════════════════════════
@@ -171,7 +239,7 @@ class _HomePageState extends ConsumerState<HomePage> {
         // 8. LOCATION UPDATE INTERVAL - Fallback for Android
         // WHY: Android FusedLocation API backup timing
         // IMPACT: Limits how often Android can wake the app
-        locationUpdateInterval: intervalMinutes * 60 * 1000, // milliseconds
+        locationUpdateInterval: heartbeatMillis, // 900000 ms = 15 minutes
         fastestLocationUpdateInterval: 300000, // 5 min minimum
         // ═══════════════════════════════════════════════════
         // 🔥 BACKGROUND OPERATION
@@ -187,7 +255,7 @@ class _HomePageState extends ConsumerState<HomePage> {
         // Notification
         notification: bg.Notification(
           title: "Smart Presence Detection",
-          text: "Tracking significant places (${intervalMinutes}min)",
+          text: "Tracking significant places (15min heartbeat)",
           color: "#4CAF50",
           smallIcon: "drawable/ic_launcher",
           largeIcon: "drawable/ic_launcher",
@@ -210,9 +278,7 @@ class _HomePageState extends ConsumerState<HomePage> {
     final state = await bg.BackgroundGeolocation.state;
     final isEnabled = state.enabled;
 
-    print(
-      '✅ Background Geolocation initialized with $intervalMinutes minute interval',
-    );
+    print('✅ Background Geolocation initialized with 15-min heartbeat');
     print('📊 Current tracking state: ${isEnabled ? "ACTIVE" : "STOPPED"}');
 
     if (isEnabled) {
@@ -310,42 +376,9 @@ class _HomePageState extends ConsumerState<HomePage> {
     }
   }
 
-  Future<void> _updateTrackingInterval(int intervalMinutes) async {
-    final intervalSeconds = intervalMinutes * 60;
-    final intervalMillis = intervalMinutes * 60 * 1000;
-
-    print('⚙️ Updating tracking interval to $intervalMinutes minutes');
-
-    await bg.BackgroundGeolocation.setConfig(
-      bg.Config(
-        heartbeatInterval: intervalSeconds,
-        locationUpdateInterval: intervalMillis,
-        fastestLocationUpdateInterval: intervalMillis,
-        notification: bg.Notification(
-          title: "Geo Tracker Active",
-          text: "Recording location every $intervalMinutes minutes",
-          color: "#4CAF50",
-          smallIcon: "drawable/ic_launcher",
-          largeIcon: "drawable/ic_launcher",
-        ),
-      ),
-    );
-
-    ref.read(trackingIntervalProvider.notifier).state = intervalMinutes;
-
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('✓ Interval updated to $intervalMinutes minutes'),
-          backgroundColor: Colors.blue,
-          duration: const Duration(seconds: 2),
-        ),
-      );
-    }
-  }
-
   void _onLocation(bg.Location location) {
     _totalTriggers++; // Count every wake-up
+    _increment24hTriggers(); // Persist 24h stats
 
     print('🔔 TRIGGER #$_totalTriggers: Location event');
     print(
@@ -398,6 +431,7 @@ class _HomePageState extends ConsumerState<HomePage> {
   void _sendHeartbeat(bg.Location location) {
     _totalHeartbeats++;
     _lastHeartbeatTime = DateTime.now();
+    _increment24hHeartbeats(); // Persist 24h stats
 
     print('💓 HEARTBEAT #$_totalHeartbeats sent');
     print(
@@ -421,6 +455,7 @@ class _HomePageState extends ConsumerState<HomePage> {
 
   void _onMotionChange(bg.Location location) {
     _totalTriggers++;
+    _increment24hTriggers(); // Persist 24h stats
 
     final isMoving = location.isMoving;
     print(
@@ -448,6 +483,7 @@ class _HomePageState extends ConsumerState<HomePage> {
 
   void _onActivityChange(bg.ActivityChangeEvent event) async {
     _totalTriggers++;
+    _increment24hTriggers(); // Persist 24h stats
 
     print('🔔 TRIGGER #$_totalTriggers: Activity change');
     print(
@@ -505,6 +541,7 @@ class _HomePageState extends ConsumerState<HomePage> {
 
   void _onHeartbeat(bg.HeartbeatEvent event) async {
     _totalTriggers++;
+    _increment24hTriggers(); // Persist 24h stats
 
     print('🔔 TRIGGER #$_totalTriggers: Heartbeat (15-min backup)');
     print('   🚗 traveling: $_isTraveling');
@@ -537,22 +574,21 @@ class _HomePageState extends ConsumerState<HomePage> {
 
   Future<void> _startTracking() async {
     try {
-      final intervalMinutes = ref.read(trackingIntervalProvider);
       final state = await bg.BackgroundGeolocation.start();
-      print('🟢 Tracking started - Running in background!');
+      print('🟢 Smart presence tracking started!');
       print('📱 App can be closed - tracking will continue');
       print('🔔 You should see a persistent notification');
-      print('⏱️ Update interval: $intervalMinutes minutes');
+      print('⏱️ 15-min heartbeat backup + motion-based tracking');
       ref.read(isTrackingProvider.notifier).state = true;
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
+          const SnackBar(
             content: Text(
-              '✓ Background tracking started!\nWill track every $intervalMinutes min even when app is closed',
+              '✓ Smart presence detection started!\nMotion-based + 15-min heartbeat backup',
             ),
             backgroundColor: Colors.green,
-            duration: const Duration(seconds: 4),
+            duration: Duration(seconds: 4),
           ),
         );
       }
@@ -678,7 +714,11 @@ class _HomePageState extends ConsumerState<HomePage> {
     final locations = ref.watch(locationProvider);
     final isTracking = ref.watch(isTrackingProvider);
     final currentActivity = ref.watch(currentActivityProvider);
-    final trackingInterval = ref.watch(trackingIntervalProvider);
+
+    // Calculate 24h stats efficiency
+    final efficiency24h = _triggers24h > 0
+        ? (_heartbeats24h / _triggers24h * 100).toStringAsFixed(0)
+        : '0';
 
     return Scaffold(
       appBar: AppBar(
@@ -747,7 +787,7 @@ class _HomePageState extends ConsumerState<HomePage> {
                 ),
                 const SizedBox(height: 6),
                 Text(
-                  'Updates every $trackingInterval minutes',
+                  'Motion-based + 15-min heartbeat',
                   style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                     color: Colors.grey.shade600,
                     fontWeight: FontWeight.w500,
@@ -813,7 +853,7 @@ class _HomePageState extends ConsumerState<HomePage> {
                     borderRadius: BorderRadius.circular(20),
                   ),
                   child: Text(
-                    'Efficiency: ${_totalTriggers > 0 ? (_totalHeartbeats / _totalTriggers * 100).toStringAsFixed(0) : 0}% ($_totalHeartbeats/$_totalTriggers)',
+                    'Session: ${_totalTriggers > 0 ? (_totalHeartbeats / _totalTriggers * 100).toStringAsFixed(0) : 0}% ($_totalHeartbeats/$_totalTriggers)',
                     style: TextStyle(
                       color: Colors.amber.shade900,
                       fontWeight: FontWeight.bold,
@@ -821,114 +861,24 @@ class _HomePageState extends ConsumerState<HomePage> {
                     ),
                   ),
                 ),
-              ],
-            ),
-          ),
-
-          // Interval selector
-          Container(
-            margin: const EdgeInsets.symmetric(horizontal: 16),
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: Colors.grey.shade300),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withOpacity(0.05),
-                  blurRadius: 4,
-                  offset: const Offset(0, 2),
-                ),
-              ],
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    Icon(
-                      Icons.timer,
-                      size: 20,
-                      color: Colors.deepPurple.shade700,
+                const SizedBox(height: 8),
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 8,
+                  ),
+                  decoration: BoxDecoration(
+                    color: Colors.green.shade50,
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: Text(
+                    'Last 24h: $efficiency24h% ($_heartbeats24h/$_triggers24h)',
+                    style: TextStyle(
+                      color: Colors.green.shade900,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 12,
                     ),
-                    const SizedBox(width: 8),
-                    Text(
-                      'Update Interval',
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.grey.shade800,
-                      ),
-                    ),
-                    if (isTracking) ...[
-                      const SizedBox(width: 8),
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 8,
-                          vertical: 2,
-                        ),
-                        decoration: BoxDecoration(
-                          color: Colors.orange.shade100,
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: Text(
-                          'Stop to change',
-                          style: TextStyle(
-                            fontSize: 10,
-                            color: Colors.orange.shade900,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ],
-                ),
-                const SizedBox(height: 12),
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
-                  children: [2, 5, 8, 10, 15].map((minutes) {
-                    final isSelected = trackingInterval == minutes;
-                    return InkWell(
-                      onTap: isTracking
-                          ? null
-                          : () async {
-                              await _updateTrackingInterval(minutes);
-                            },
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 16,
-                          vertical: 10,
-                        ),
-                        decoration: BoxDecoration(
-                          color: isSelected
-                              ? Colors.deepPurple.shade600
-                              : isTracking
-                              ? Colors.grey.shade200
-                              : Colors.deepPurple.shade50,
-                          borderRadius: BorderRadius.circular(8),
-                          border: Border.all(
-                            color: isSelected
-                                ? Colors.deepPurple.shade600
-                                : Colors.grey.shade300,
-                            width: 2,
-                          ),
-                        ),
-                        child: Text(
-                          '$minutes min',
-                          style: TextStyle(
-                            fontSize: 14,
-                            fontWeight: FontWeight.bold,
-                            color: isSelected
-                                ? Colors.white
-                                : isTracking
-                                ? Colors.grey.shade500
-                                : Colors.deepPurple.shade700,
-                          ),
-                        ),
-                      ),
-                    );
-                  }).toList(),
+                  ),
                 ),
               ],
             ),
@@ -956,7 +906,7 @@ class _HomePageState extends ConsumerState<HomePage> {
                   const SizedBox(width: 12),
                   Expanded(
                     child: Text(
-                      'Location updates will appear every $trackingInterval minutes',
+                      'Heartbeats sent only at significant places (15-min backup)',
                       style: TextStyle(
                         color: Colors.blue.shade900,
                         fontSize: 12,
