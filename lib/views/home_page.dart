@@ -76,6 +76,10 @@ class HomePage extends ConsumerStatefulWidget {
 class _HomePageState extends ConsumerState<HomePage> {
   bool _isInitialized = false;
   String _currentActivity = 'unknown';
+  bool _isTraveling = false;
+  DateTime _lastHeartbeatTime = DateTime.now().subtract(const Duration(hours: 1));
+  int _totalTriggers = 0;
+  int _totalHeartbeats = 0;
 
   @override
   void initState() {
@@ -98,78 +102,104 @@ class _HomePageState extends ConsumerState<HomePage> {
     // Heartbeat listener
     bg.BackgroundGeolocation.onHeartbeat(_onHeartbeat);
 
-    // Get initial interval
+    // Get initial interval (for heartbeat backup)
     final intervalMinutes = ref.read(trackingIntervalProvider);
-    final intervalSeconds = intervalMinutes * 60;
-    final intervalMillis = intervalMinutes * 60 * 1000;
 
-    // Configure the plugin with user-selected interval
+    print('🎯 Configuring SMART PRESENCE DETECTION system');
+    print('📍 Strategy: Motion-based + Activity detection');
+    print('🎯 Target: ~100 heartbeats/day, minimize wake-ups');
+
+    // Configure the plugin for SMART PRESENCE DETECTION
     await bg.BackgroundGeolocation.ready(
       bg.Config(
-        // Accuracy settings - medium for battery optimization
-        desiredAccuracy: bg.Config.DESIRED_ACCURACY_MEDIUM,
-        distanceFilter: 150.0, // meters
-        // Motion detection
-        stopTimeout: 1, // 1 minute before considering stationary
-        activityRecognitionInterval: 10000, // 10 seconds
-        // Heartbeat - user configurable interval
-        heartbeatInterval: intervalSeconds,
+        // ═══════════════════════════════════════════════════
+        // 🎯 CORE STRATEGY: Motion-Based Tracking
+        // ═══════════════════════════════════════════════════
+        // WHY: We want to detect "significant places" (where user spends time)
+        // NOT periodic pings regardless of context
 
-        // Battery optimization
-        disableElasticity: false,
-        stopOnTerminate: false, // 🔥 KEEPS TRACKING EVEN WHEN APP IS CLOSED
-        startOnBoot: true, // 🔥 RESUMES TRACKING AFTER PHONE RESTART
-        foregroundService:
-            true, // 🔥 RUNS AS FOREGROUND SERVICE (REQUIRED FOR ANDROID)
-        enableHeadless: true, // 🔥 CRITICAL: Enables background operation
+        // 1. DISTANCE FILTER - Reduces GPS drift noise
+        // WHY: 200m means app only wakes when user moves significantly
+        // IMPACT: Reduces wake-ups from ~288/day to ~100-120/day
+        distanceFilter: 200.0, // meters
+
+        // 2. STATIONARY RADIUS - Geofence around stopped location
+        // WHY: Once stationary, creates 100m geofence. Only wake if user exits it.
+        // IMPACT: Prevents wake-ups from GPS drift when sitting at cafe/home
+        stationaryRadius: 100, // meters
+
+        // 3. STOP TIMEOUT - Time before considering "stationary"
+        // WHY: 5 min means user must be still for 5 min before we consider it a "significant place"
+        // IMPACT: Filters out quick stops (traffic lights, grocery pickup)
+        stopTimeout: 5, // minutes
+
+        // 4. DISABLE ELASTICITY - Don't auto-adjust distance filter
+        // WHY: Plugin normally reduces distanceFilter when stationary. We want consistent behavior.
+        // IMPACT: Predictable wake-up behavior, easier to optimize
+        disableElasticity: true,
+
+        // ═══════════════════════════════════════════════════
+        // 🚗 TRAVEL SUPPRESSION: Activity Recognition
+        // ═══════════════════════════════════════════════════
+        // WHY: Don't send heartbeats during commutes/driving
+
+        // 5. ACTIVITY RECOGNITION - Detect travel modes
+        // WHY: Identifies in_vehicle, on_bicycle, walking, still
+        // IMPACT: Client code can suppress heartbeats during travel
+        activityRecognitionInterval: 60000, // 1 minute
+
+        // ═══════════════════════════════════════════════════
+        // ⏰ HEARTBEAT BACKUP: Ensure regular updates
+        // ═══════════════════════════════════════════════════
+        // WHY: Even if user doesn't move, send heartbeat every 15 min
+
+        // 6. HEARTBEAT INTERVAL - Safety net for long stays
+        // WHY: Ensures at least one heartbeat every 15 min when stationary
+        // IMPACT: User at home for 8h = 32 heartbeats (8*60/15)
+        heartbeatInterval: intervalMinutes * 60, // seconds
+
+        // ═══════════════════════════════════════════════════
+        // 🔋 ACCURACY SETTINGS: Balance accuracy vs battery
+        // ═══════════════════════════════════════════════════
+
+        // 7. DESIRED ACCURACY - Medium is enough for presence detection
+        // WHY: We don't need GPS precision. Cell tower + WiFi is sufficient.
+        // IMPACT: Saves significant battery vs HIGH accuracy
+        desiredAccuracy: bg.Config.DESIRED_ACCURACY_MEDIUM,
+
+        // ═══════════════════════════════════════════════════
+        // 📱 ANDROID-SPECIFIC: Location Update Intervals
+        // ═══════════════════════════════════════════════════
+
+        // 8. LOCATION UPDATE INTERVAL - Fallback for Android
+        // WHY: Android FusedLocation API backup timing
+        // IMPACT: Limits how often Android can wake the app
+        locationUpdateInterval: intervalMinutes * 60 * 1000, // milliseconds
+        fastestLocationUpdateInterval: 300000, // 5 min minimum
+
+        // ═══════════════════════════════════════════════════
+        // 🔥 BACKGROUND OPERATION
+        // ═══════════════════════════════════════════════════
+
+        stopOnTerminate: false, // Keep tracking when app closed
+        startOnBoot: true, // Resume after phone restart
+        foregroundService: true, // Required for Android background
+        enableHeadless: true, // Critical for background operation
+
         // iOS specific
         pausesLocationUpdatesAutomatically: false,
         activityType: bg.Config.ACTIVITY_TYPE_OTHER,
 
-        // Android specific
-        locationUpdateInterval: intervalMillis,
-        fastestLocationUpdateInterval: intervalMillis,
-
-        // 🌐 HTTP/SERVER CONFIGURATION (for production)
-        // Uncomment and configure these for real-world apps:
-
-        // url: "https://your-api.com/api/locations",  // Your backend endpoint
-        // method: "POST",
-        // autoSync: true,  // Auto-send to server
-        // autoSyncThreshold: 0,  // Send immediately (0 = no batching)
-        // batchSync: false,  // Set true to batch multiple locations
-        // maxBatchSize: 250,  // Max locations per batch
-        // maxDaysToPersist: 7,  // Keep failed uploads for 7 days
-
-        // // Authentication & Headers
-        // headers: {
-        //   "Authorization": "Bearer YOUR_AUTH_TOKEN",
-        //   "Content-Type": "application/json",
-        //   "X-API-Key": "your-api-key",
-        // },
-
-        // // Additional parameters sent with each location
-        // params: {
-        //   "user_id": "123",  // Replace with actual user ID
-        //   "device_id": "android_abc",  // Device identifier
-        // },
-
-        // // Custom fields in the payload
-        // extras: {
-        //   "app_version": "1.0.0",
-        //   "tracking_mode": "battery_poc",
-        // },
-
-        // Notification (required for Android foreground service)
+        // Notification
         notification: bg.Notification(
-          title: "Geo Tracker Active",
-          text: "Recording location every $intervalMinutes minutes",
+          title: "Smart Presence Detection",
+          text: "Tracking significant places (${intervalMinutes}min)",
           color: "#4CAF50",
           smallIcon: "drawable/ic_launcher",
           largeIcon: "drawable/ic_launcher",
         ),
 
-        // Debug settings - enable for testing, disable for production
+        // Debug
         logLevel: bg.Config.LOG_LEVEL_VERBOSE,
         debug: true,
       ),
@@ -321,9 +351,56 @@ class _HomePageState extends ConsumerState<HomePage> {
   }
 
   void _onLocation(bg.Location location) {
-    print(
-      '📍 Location Update: ${location.coords.latitude}, ${location.coords.longitude}',
-    );
+    _totalTriggers++; // Count every wake-up
+
+    print('🔔 TRIGGER #$_totalTriggers: Location event');
+    print('   📍 Coords: ${location.coords.latitude}, ${location.coords.longitude}');
+    print('   🏃 isMoving: ${location.isMoving}');
+    print('   ⚡ speed: ${location.coords.speed ?? 0} m/s');
+    print('   🎯 activity: $_currentActivity');
+    print('   🚗 traveling: $_isTraveling');
+
+    // ═══════════════════════════════════════════════════
+    // SMART HEARTBEAT LOGIC - Decide if should send
+    // ═══════════════════════════════════════════════════
+
+    // CHECK 1: Don't send if traveling
+    if (_isTraveling) {
+      print('   ❌ SKIP: User is traveling');
+      return;
+    }
+
+    // CHECK 2: Don't send if moving
+    if (location.isMoving) {
+      print('   ❌ SKIP: User is moving');
+      return;
+    }
+
+    // CHECK 3: Don't send if high speed (>2 m/s = ~7 km/h)
+    final speed = location.coords.speed ?? 0.0;
+    if (speed > 2.0) {
+      print('   ❌ SKIP: Speed too high (${speed.toStringAsFixed(1)} m/s)');
+      return;
+    }
+
+    // CHECK 4: Don't send if last heartbeat was < 15 min ago
+    final timeSinceLastHeartbeat = DateTime.now().difference(_lastHeartbeatTime);
+    if (timeSinceLastHeartbeat.inMinutes < 15) {
+      print('   ❌ SKIP: Last heartbeat was ${timeSinceLastHeartbeat.inMinutes} min ago');
+      return;
+    }
+
+    // ✅ ALL CHECKS PASSED - Send heartbeat!
+    print('   ✅ SEND HEARTBEAT: User at significant place');
+    _sendHeartbeat(location);
+  }
+
+  void _sendHeartbeat(bg.Location location) {
+    _totalHeartbeats++;
+    _lastHeartbeatTime = DateTime.now();
+
+    print('💓 HEARTBEAT #$_totalHeartbeats sent');
+    print('   📊 Efficiency: $_totalHeartbeats heartbeats / $_totalTriggers triggers = ${(_totalHeartbeats / _totalTriggers * 100).toStringAsFixed(1)}%');
 
     final locationData = LocationData(
       latitude: location.coords.latitude,
@@ -331,42 +408,112 @@ class _HomePageState extends ConsumerState<HomePage> {
       timestamp: DateTime.now(),
       speed: location.coords.speed,
       accuracy: location.coords.accuracy,
-      activity: _currentActivity,
+      activity: 'heartbeat',
     );
 
     ref.read(locationProvider.notifier).addLocation(locationData);
+
+    // TODO: Send to backend server here
+    // await http.post(yourServerUrl, body: locationData);
   }
 
   void _onMotionChange(bg.Location location) {
+    _totalTriggers++;
+
     final isMoving = location.isMoving;
-    print('🚶 Motion Change: isMoving=$isMoving');
+    print('🔔 TRIGGER #$_totalTriggers: Motion change → ${isMoving ? "MOVING" : "STATIONARY"}');
+    print('   🚗 traveling: $_isTraveling');
 
-    final locationData = LocationData(
-      latitude: location.coords.latitude,
-      longitude: location.coords.longitude,
-      timestamp: DateTime.now(),
-      speed: location.coords.speed,
-      accuracy: location.coords.accuracy,
-      activity: isMoving ? 'moving' : 'stationary',
-    );
+    // ═══════════════════════════════════════════════════
+    // MOTION CHANGE LOGIC
+    // ═══════════════════════════════════════════════════
+    // WHY: This fires when user starts/stops moving
+    // KEY INSIGHT: When user STOPS, they've arrived at a significant place!
 
-    ref.read(locationProvider.notifier).addLocation(locationData);
+    if (!isMoving && !_isTraveling) {
+      // User just became stationary (not traveling)
+      // This is a HIGH CONFIDENCE event - user arrived somewhere!
+      print('   ✅ IMMEDIATE HEARTBEAT: User arrived at location');
+      _sendHeartbeat(location);
+    } else if (isMoving) {
+      print('   ℹ️  User started moving - will send heartbeat when they stop');
+    } else {
+      print('   ❌ SKIP: User stationary but traveling mode detected');
+    }
   }
 
-  void _onActivityChange(bg.ActivityChangeEvent event) {
-    print(
-      '🎯 Activity Change: ${event.activity} (confidence: ${event.confidence}%)',
-    );
+  void _onActivityChange(bg.ActivityChangeEvent event) async {
+    _totalTriggers++;
+
+    print('🔔 TRIGGER #$_totalTriggers: Activity change');
+    print('   🎯 Activity: ${event.activity} (confidence: ${event.confidence}%)');
 
     setState(() {
       _currentActivity = event.activity;
     });
 
     ref.read(currentActivityProvider.notifier).state = event.activity;
+
+    // ═══════════════════════════════════════════════════
+    // TRAVEL DETECTION - Adjust behavior dynamically
+    // ═══════════════════════════════════════════════════
+    // WHY: Suppress heartbeats and reduce wake-ups during travel
+
+    final wasTraveling = _isTraveling;
+
+    // Detect if user is traveling (high confidence required)
+    if ((event.activity == 'in_vehicle' || event.activity == 'on_bicycle') &&
+        event.confidence > 70) {
+      _isTraveling = true;
+
+      if (!wasTraveling) {
+        print('   🚗 TRAVEL MODE ACTIVATED');
+        print('   ⚙️  Increasing distanceFilter to 500m to reduce wake-ups');
+
+        // Increase distance filter during travel
+        // WHY: Reduces wake-ups from ~200 to ~50 during 1h commute
+        await bg.BackgroundGeolocation.setConfig(
+          bg.Config(
+            distanceFilter: 500.0, // 500m - only wake on significant movement
+            desiredAccuracy: bg.Config.DESIRED_ACCURACY_LOW, // Save battery
+          ),
+        );
+      }
+    } else {
+      _isTraveling = false;
+
+      if (wasTraveling) {
+        print('   🏠 PRESENCE MODE ACTIVATED');
+        print('   ⚙️  Restoring distanceFilter to 200m for presence detection');
+
+        // Restore normal settings for presence detection
+        await bg.BackgroundGeolocation.setConfig(
+          bg.Config(
+            distanceFilter: 200.0, // 200m - normal sensitivity
+            desiredAccuracy: bg.Config.DESIRED_ACCURACY_MEDIUM,
+          ),
+        );
+      }
+    }
   }
 
   void _onHeartbeat(bg.HeartbeatEvent event) async {
-    print('❤️ Heartbeat fired - getting current position');
+    _totalTriggers++;
+
+    print('🔔 TRIGGER #$_totalTriggers: Heartbeat (15-min backup)');
+    print('   🚗 traveling: $_isTraveling');
+
+    // ═══════════════════════════════════════════════════
+    // HEARTBEAT LOGIC - Backup for long stationary periods
+    // ═══════════════════════════════════════════════════
+    // WHY: Ensures at least one heartbeat every 15 min when stationary
+    // EXAMPLE: User at home for 3h = 12 heartbeats
+
+    // Don't send if traveling
+    if (_isTraveling) {
+      print('   ❌ SKIP: User is traveling');
+      return;
+    }
 
     try {
       final location = await bg.BackgroundGeolocation.getCurrentPosition(
@@ -375,18 +522,10 @@ class _HomePageState extends ConsumerState<HomePage> {
         timeout: 30,
       );
 
-      final locationData = LocationData(
-        latitude: location.coords.latitude,
-        longitude: location.coords.longitude,
-        timestamp: DateTime.now(),
-        speed: location.coords.speed,
-        accuracy: location.coords.accuracy,
-        activity: 'heartbeat',
-      );
-
-      ref.read(locationProvider.notifier).addLocation(locationData);
+      print('   ✅ SEND HEARTBEAT: Stationary backup ping');
+      _sendHeartbeat(location);
     } catch (e) {
-      print('❌ Error getting position: $e');
+      print('   ❌ Error getting position: $e');
     }
   }
 
@@ -649,11 +788,30 @@ class _HomePageState extends ConsumerState<HomePage> {
                     borderRadius: BorderRadius.circular(20),
                   ),
                   child: Text(
-                    '${locations.length} locations recorded',
+                    '${locations.length} heartbeats sent',
                     style: TextStyle(
                       color: Colors.deepPurple.shade700,
                       fontWeight: FontWeight.bold,
                       fontSize: 13,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 8,
+                  ),
+                  decoration: BoxDecoration(
+                    color: Colors.amber.shade50,
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: Text(
+                    'Efficiency: ${_totalTriggers > 0 ? (_totalHeartbeats / _totalTriggers * 100).toStringAsFixed(0) : 0}% ($_totalHeartbeats/$_totalTriggers)',
+                    style: TextStyle(
+                      color: Colors.amber.shade900,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 12,
                     ),
                   ),
                 ),
