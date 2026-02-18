@@ -361,6 +361,10 @@ class _HomePageState extends ConsumerState<HomePage> {
   }
 
   Future<void> _loadPersistedLocations() async {
+    // Refresh counters from SharedPreferences (picks up headless updates)
+    await _loadPersistentState();
+    await _load24hStats();
+
     try {
       print('📥 Loading persisted locations from plugin database...');
 
