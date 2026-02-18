@@ -88,8 +88,71 @@ class _HomePageState extends ConsumerState<HomePage> {
   @override
   void initState() {
     super.initState();
+    _loadPersistentState();
     _load24hStats();
     _initBackgroundGeolocation();
+  }
+
+  // ═══════════════════════════════════════════════════════════════════
+  // 💾 PERSISTENT STATE - Sync with headless mode
+  // ═══════════════════════════════════════════════════════════════════
+  // WHY: Headless mode and UI mode share state via SharedPreferences
+  // This ensures seamless continuity when app opens/closes
+
+  Future<void> _loadPersistentState() async {
+    final prefs = await SharedPreferences.getInstance();
+
+    final isTraveling = prefs.getBool('is_traveling') ?? false;
+    final lastHeartbeatMs = prefs.getInt('last_heartbeat_time');
+    final activity = prefs.getString('current_activity') ?? 'unknown';
+    final triggers = prefs.getInt('total_triggers') ?? 0;
+    final heartbeats = prefs.getInt('total_heartbeats') ?? 0;
+
+    setState(() {
+      _isTraveling = isTraveling;
+      _currentActivity = activity;
+      _totalTriggers = triggers;
+      _totalHeartbeats = heartbeats;
+      if (lastHeartbeatMs != null) {
+        _lastHeartbeatTime = DateTime.fromMillisecondsSinceEpoch(
+          lastHeartbeatMs,
+        );
+      }
+    });
+
+    print('💾 Loaded persistent state:');
+    print('   Traveling: $_isTraveling');
+    print('   Activity: $_currentActivity');
+    print('   Triggers: $_totalTriggers');
+    print('   Heartbeats: $_totalHeartbeats');
+  }
+
+  Future<void> _saveTravelingState(bool isTraveling) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('is_traveling', isTraveling);
+  }
+
+  Future<void> _saveActivityState(String activity) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('current_activity', activity);
+  }
+
+  Future<void> _saveHeartbeatTime() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setInt(
+      'last_heartbeat_time',
+      _lastHeartbeatTime.millisecondsSinceEpoch,
+    );
+  }
+
+  Future<void> _saveTriggerCount() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setInt('total_triggers', _totalTriggers);
+  }
+
+  Future<void> _saveHeartbeatCount() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setInt('total_heartbeats', _totalHeartbeats);
   }
 
   // ═══════════════════════════════════════════════════
@@ -388,6 +451,7 @@ class _HomePageState extends ConsumerState<HomePage> {
 
   void _onLocation(bg.Location location) {
     _totalTriggers++; // Count every wake-up
+    _saveTriggerCount(); // Persist to SharedPreferences
     _increment24hTriggers(); // Persist 24h stats
 
     print('🔔 TRIGGER #$_totalTriggers: Location event');
@@ -441,6 +505,8 @@ class _HomePageState extends ConsumerState<HomePage> {
   void _sendHeartbeat(bg.Location location) {
     _totalHeartbeats++;
     _lastHeartbeatTime = DateTime.now();
+    _saveHeartbeatCount(); // Persist to SharedPreferences
+    _saveHeartbeatTime(); // Persist heartbeat time
     _increment24hHeartbeats(); // Persist 24h stats
 
     print('💓 HEARTBEAT #$_totalHeartbeats sent');
@@ -465,6 +531,7 @@ class _HomePageState extends ConsumerState<HomePage> {
 
   void _onMotionChange(bg.Location location) {
     _totalTriggers++;
+    _saveTriggerCount(); // Persist to SharedPreferences
     _increment24hTriggers(); // Persist 24h stats
 
     final isMoving = location.isMoving;
@@ -493,6 +560,7 @@ class _HomePageState extends ConsumerState<HomePage> {
 
   void _onActivityChange(bg.ActivityChangeEvent event) async {
     _totalTriggers++;
+    _saveTriggerCount(); // Persist to SharedPreferences
     _increment24hTriggers(); // Persist 24h stats
 
     print('🔔 TRIGGER #$_totalTriggers: Activity change');
@@ -503,6 +571,7 @@ class _HomePageState extends ConsumerState<HomePage> {
     setState(() {
       _currentActivity = event.activity;
     });
+    _saveActivityState(event.activity); // Persist activity
 
     ref.read(currentActivityProvider.notifier).state = event.activity;
 
@@ -517,6 +586,7 @@ class _HomePageState extends ConsumerState<HomePage> {
     if ((event.activity == 'in_vehicle' || event.activity == 'on_bicycle') &&
         event.confidence > 70) {
       _isTraveling = true;
+      _saveTravelingState(true); // Persist traveling state
 
       if (!wasTraveling) {
         print('   🚗 TRAVEL MODE ACTIVATED');
@@ -533,16 +603,17 @@ class _HomePageState extends ConsumerState<HomePage> {
       }
     } else {
       _isTraveling = false;
+      _saveTravelingState(false); // Persist traveling state
 
       if (wasTraveling) {
         print('   🏠 PRESENCE MODE ACTIVATED');
-        print('   ⚙️  Restoring distanceFilter to 200m for presence detection');
+        print('   ⚙️  Restoring distanceFilter to 300m for presence detection');
 
         // Restore normal settings for presence detection
         await bg.BackgroundGeolocation.setConfig(
           bg.Config(
-            distanceFilter: 200.0, // 200m - normal sensitivity
-            desiredAccuracy: bg.Config.DESIRED_ACCURACY_MEDIUM,
+            distanceFilter: 300.0, // 300m - normal sensitivity (Config #2)
+            desiredAccuracy: bg.Config.DESIRED_ACCURACY_LOW, // Config #2
           ),
         );
       }
@@ -551,6 +622,7 @@ class _HomePageState extends ConsumerState<HomePage> {
 
   void _onHeartbeat(bg.HeartbeatEvent event) async {
     _totalTriggers++;
+    _saveTriggerCount(); // Persist to SharedPreferences
     _increment24hTriggers(); // Persist 24h stats
 
     print('🔔 TRIGGER #$_totalTriggers: Heartbeat (15-min backup)');
