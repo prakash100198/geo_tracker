@@ -72,6 +72,7 @@ class HomePage extends ConsumerStatefulWidget {
 
 class _HomePageState extends ConsumerState<HomePage> {
   bool _isInitialized = false;
+  bool _isInitializing = true;
   String _currentActivity = 'unknown';
   bool _isTraveling = false;
   DateTime _lastHeartbeatTime = DateTime.now().subtract(
@@ -347,6 +348,11 @@ class _HomePageState extends ConsumerState<HomePage> {
     // Load persisted locations from plugin's database
     await _loadPersistedLocations();
 
+    // Allow startup events to settle before counting triggers
+    Future.delayed(const Duration(seconds: 3), () {
+      if (mounted) setState(() => _isInitializing = false);
+    });
+
     // Check if tracking was previously active and sync UI state
     final state = await bg.BackgroundGeolocation.state;
     final isEnabled = state.enabled;
@@ -454,6 +460,7 @@ class _HomePageState extends ConsumerState<HomePage> {
   }
 
   void _onLocation(bg.Location location) {
+    if (_isInitializing) return;
     _totalTriggers++; // Count every wake-up
     _saveTriggerCount(); // Persist to SharedPreferences
     _increment24hTriggers(); // Persist 24h stats
@@ -534,6 +541,7 @@ class _HomePageState extends ConsumerState<HomePage> {
   }
 
   void _onMotionChange(bg.Location location) {
+    if (_isInitializing) return;
     _totalTriggers++;
     _saveTriggerCount(); // Persist to SharedPreferences
     _increment24hTriggers(); // Persist 24h stats
@@ -563,6 +571,7 @@ class _HomePageState extends ConsumerState<HomePage> {
   }
 
   void _onActivityChange(bg.ActivityChangeEvent event) async {
+    if (_isInitializing) return;
     _totalTriggers++;
     _saveTriggerCount(); // Persist to SharedPreferences
     _increment24hTriggers(); // Persist 24h stats
@@ -625,6 +634,7 @@ class _HomePageState extends ConsumerState<HomePage> {
   }
 
   void _onHeartbeat(bg.HeartbeatEvent event) async {
+    if (_isInitializing) return;
     _totalTriggers++;
     _saveTriggerCount(); // Persist to SharedPreferences
     _increment24hTriggers(); // Persist 24h stats
