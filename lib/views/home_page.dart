@@ -237,7 +237,6 @@ class _HomePageState extends ConsumerState<HomePage> {
         // WHY: LOW uses GPS sparingly, relies more on cell towers + WiFi
         // IMPACT: 🔋 **30-40% battery savings** - Major optimization!
         desiredAccuracy: bg.Config.DESIRED_ACCURACY_LOW, // (was MEDIUM)
-
         // ═══════════════════════════════════════════════════
         // 📱 ANDROID-SPECIFIC: Location Update Intervals
         // ═══════════════════════════════════════════════════
@@ -247,7 +246,6 @@ class _HomePageState extends ConsumerState<HomePage> {
         // WHY: Android FusedLocation API less frequent
         // IMPACT: Reduces Android-specific triggers
         locationUpdateInterval: 1200000, // 20 minutes (was 900000)
-
         // 9. FASTEST UPDATE INTERVAL - Minimum threshold
         // CONFIG #2 OPTIMIZED: 5 min → 10 min (+100%)
         // WHY: Higher minimum threshold between updates
@@ -883,13 +881,42 @@ class _HomePageState extends ConsumerState<HomePage> {
                     color: Colors.green.shade50,
                     borderRadius: BorderRadius.circular(20),
                   ),
-                  child: Text(
-                    'Last 24h: $efficiency24h% ($_heartbeats24h/$_triggers24h)',
-                    style: TextStyle(
-                      color: Colors.green.shade900,
-                      fontWeight: FontWeight.bold,
-                      fontSize: 12,
-                    ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        'Last 24h: $efficiency24h% ($_heartbeats24h/$_triggers24h)',
+                        style: TextStyle(
+                          color: Colors.green.shade900,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 12,
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      InkWell(
+                        onTap: () async {
+                          await _reset24hStats();
+                          if (mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                content: Text('✓ 24h stats reset'),
+                                backgroundColor: Colors.green,
+                                duration: Duration(seconds: 2),
+                              ),
+                            );
+                          }
+                        },
+                        borderRadius: BorderRadius.circular(12),
+                        child: Padding(
+                          padding: const EdgeInsets.all(4),
+                          child: Icon(
+                            Icons.refresh,
+                            size: 16,
+                            color: Colors.green.shade700,
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
                 ),
               ],
