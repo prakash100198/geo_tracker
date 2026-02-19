@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_background_geolocation/flutter_background_geolocation.dart'
@@ -290,6 +291,9 @@ class _HomePageState extends ConsumerState<HomePage> {
         // ═══════════════════════════════════════════════════
         // 🔥 BACKGROUND OPERATION
         // ═══════════════════════════════════════════════════
+        // Disable auto-persist — only manual heartbeat saves go to storage
+        persistMode: bg.Config.PERSIST_MODE_NONE,
+
         stopOnTerminate: false, // Keep tracking when app closed
         startOnBoot: true, // Resume after phone restart
         foregroundService: true, // Required for Android background
@@ -344,18 +348,19 @@ class _HomePageState extends ConsumerState<HomePage> {
     await _load24hStats();
 
     try {
-      print('📥 Loading persisted locations from plugin database...');
+      print('📥 Loading headless heartbeats from SharedPreferences...');
 
-      // Query all locations from plugin's SQLite database
-      final locations = await bg.BackgroundGeolocation.locations;
+      final prefs = await SharedPreferences.getInstance();
+      final jsonStr = prefs.getString('headless_heartbeats') ?? '[]';
+      final List<dynamic> heartbeats = jsonDecode(jsonStr);
 
-      print('📍 Found ${locations.length} persisted locations');
+      print('💓 Found ${heartbeats.length} headless heartbeats');
 
-      if (locations.isEmpty) {
+      if (heartbeats.isEmpty) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
-              content: Text('No new background locations to sync'),
+              content: Text('No new background heartbeats to sync'),
               duration: Duration(seconds: 2),
             ),
           );
@@ -363,55 +368,30 @@ class _HomePageState extends ConsumerState<HomePage> {
         return;
       }
 
-      // Add them to our state in reverse order (newest first)
-      for (var i = locations.length - 1; i >= 0; i--) {
-        final loc = locations[i];
-
-        // bg.BackgroundGeolocation.locations returns List<Map<Object?, Object?>>
-        // We must convert (not cast) to Map<String, dynamic> using .from()
-        final coordsRaw = loc['coords'];
-        final activityRaw = loc['activity'];
-        final timestampStr = loc['timestamp']?.toString();
-
-        if (coordsRaw == null || coordsRaw is! Map) continue;
-
-        final coords = Map<String, dynamic>.from(coordsRaw);
-        final activity = activityRaw is Map
-            ? Map<String, dynamic>.from(activityRaw)
-            : <String, dynamic>{};
-
-        DateTime timestamp;
-        try {
-          timestamp = timestampStr != null
-              ? DateTime.parse(timestampStr)
-              : DateTime.now();
-        } catch (_) {
-          timestamp = DateTime.now();
-        }
-
-        final locationData = LocationData(
-          latitude: (coords['latitude'] as num?)?.toDouble() ?? 0.0,
-          longitude: (coords['longitude'] as num?)?.toDouble() ?? 0.0,
-          timestamp: timestamp,
-          speed: (coords['speed'] as num?)?.toDouble(),
-          accuracy: (coords['accuracy'] as num?)?.toDouble(),
-          activity: (activity['type'] as String?) ?? 'unknown',
+      // Add in reverse order so newest appears at top
+      for (var i = heartbeats.length - 1; i >= 0; i--) {
+        final h = heartbeats[i] as Map<String, dynamic>;
+        ref.read(locationProvider.notifier).addLocation(
+          LocationData(
+            latitude: (h['lat'] as num).toDouble(),
+            longitude: (h['lng'] as num).toDouble(),
+            timestamp: DateTime.parse(h['timestamp'] as String),
+            accuracy: (h['accuracy'] as num?)?.toDouble(),
+            speed: (h['speed'] as num?)?.toDouble(),
+            activity: 'heartbeat',
+          ),
         );
-
-        ref.read(locationProvider.notifier).addLocation(locationData);
       }
 
-      // Clear the plugin's database after loading
-      await bg.BackgroundGeolocation.destroyLocations();
-      print(
-        '🗑️ Cleared plugin database after loading ${locations.length} locations',
-      );
+      // Clear after loading
+      await prefs.remove('headless_heartbeats');
+      print('🗑️ Cleared headless heartbeats after loading');
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
-              '✓ Synced ${locations.length} background location${locations.length > 1 ? 's' : ''}',
+              '✓ Synced ${heartbeats.length} background heartbeat${heartbeats.length > 1 ? 's' : ''}',
             ),
             backgroundColor: Colors.green,
             duration: const Duration(seconds: 2),
@@ -419,7 +399,7 @@ class _HomePageState extends ConsumerState<HomePage> {
         );
       }
     } catch (e) {
-      print('❌ Error loading persisted locations: $e');
+      print('❌ Error loading headless heartbeats: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(

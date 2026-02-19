@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:geo_tracker/views/home_page.dart';
@@ -239,12 +240,19 @@ Future<void> _sendHeadlessHeartbeat(
     '   📍 Coords: ${location.coords.latitude}, ${location.coords.longitude}',
   );
 
-  // Store location data to plugin's database
-  // When app opens, it will load these via _loadPersistedLocations()
-  // The location is automatically persisted by the plugin
+  // Manually save heartbeat location so UI can display it on next sync
+  final existingJson = prefs.getString('headless_heartbeats') ?? '[]';
+  final List<dynamic> saved = jsonDecode(existingJson);
+  saved.add({
+    'lat': location.coords.latitude,
+    'lng': location.coords.longitude,
+    'timestamp': DateTime.now().toIso8601String(),
+    'accuracy': location.coords.accuracy,
+    'speed': location.coords.speed,
+  });
+  await prefs.setString('headless_heartbeats', jsonEncode(saved));
 
   // TODO: Send to backend server here
-  // You can use http package even in headless mode
   // await http.post(yourServerUrl, body: {...});
 }
 
