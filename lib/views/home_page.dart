@@ -902,7 +902,7 @@ class _HomePageState extends ConsumerState<HomePage> {
                     borderRadius: BorderRadius.circular(20),
                   ),
                   child: Text(
-                    '${locations.length} heartbeats sent',
+                    '$_totalHeartbeats heartbeats sent',
                     style: TextStyle(
                       color: Colors.deepPurple.shade700,
                       fontWeight: FontWeight.bold,
