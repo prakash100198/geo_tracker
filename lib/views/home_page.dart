@@ -233,16 +233,15 @@ class _HomePageState extends ConsumerState<HomePage> {
     // Heartbeat listener
     bg.BackgroundGeolocation.onHeartbeat(_onHeartbeat);
 
-    // Fixed 15-minute heartbeat interval (no longer user-configurable)
-    const heartbeatMinutes = 15;
-    const heartbeatSeconds = heartbeatMinutes * 60; // 900 seconds
-    const heartbeatMillis = heartbeatMinutes * 60 * 1000; // 900000 ms
+    // Fixed 20-minute heartbeat interval
+    const heartbeatMinutes = 20;
+    const heartbeatSeconds = heartbeatMinutes * 60; // 1200 seconds
+    const heartbeatMillis = heartbeatMinutes * 60 * 1000; // 1200000 ms
 
     print('🎯 Configuring SMART PRESENCE DETECTION system');
     print('📍 Strategy: Motion-based + Activity detection');
-    print('🔋 Config #2: OPTIMIZED FOR BATTERY (1-3% target)');
+    print('🔋 Config #3: Previous base config + LOW accuracy + 20min heartbeat');
     print('⏱️  Fixed heartbeat: $heartbeatMinutes minutes');
-    print('🎯 Target: ~75-85 triggers/day, ~50-60 heartbeats/day');
 
     // Configure the plugin for SMART PRESENCE DETECTION
     await bg.BackgroundGeolocation.ready(
@@ -250,71 +249,44 @@ class _HomePageState extends ConsumerState<HomePage> {
         // ═══════════════════════════════════════════════════
         // 🎯 CORE STRATEGY: Motion-Based Tracking
         // ═══════════════════════════════════════════════════
-        // WHY: We want to detect "significant places" (where user spends time)
-        // NOT periodic pings regardless of context
 
-        // 1. DISTANCE FILTER - Reduces GPS drift noise
-        // CONFIG #2 OPTIMIZED: 200m → 300m (+50%)
-        // WHY: Less sensitive to movement = fewer triggers (Target: 75-85/day)
-        // IMPACT: Reduces movement-based triggers by ~20-25%
-        distanceFilter: 300.0, // meters (was 200.0)
+        // 1. DISTANCE FILTER
+        distanceFilter: 200.0, // meters
         // 2. STATIONARY RADIUS - Geofence around stopped location
-        // CONFIG #2 OPTIMIZED: 100m → 150m (+50%)
-        // WHY: Larger buffer = fewer GPS drift wake-ups
-        // IMPACT: Reduces GPS drift triggers by ~15-20%
-        stationaryRadius: 150, // meters (was 100)
+        stationaryRadius: 100, // meters
         // 3. STOP TIMEOUT - Time before considering "stationary"
-        // CONFIG #2 OPTIMIZED: 5 min → 8 min (+60%)
-        // WHY: Must stay still longer to count as "significant place"
-        // IMPACT: Filters out more quick stops
-        stopTimeout: 8, // minutes (was 5)
+        stopTimeout: 5, // minutes
         // 4. DISABLE ELASTICITY - Don't auto-adjust distance filter
-        // WHY: Plugin normally reduces distanceFilter when stationary. We want consistent behavior.
-        // IMPACT: Predictable wake-up behavior, easier to optimize
         disableElasticity: true,
 
         // ═══════════════════════════════════════════════════
         // 🚗 TRAVEL SUPPRESSION: Activity Recognition
         // ═══════════════════════════════════════════════════
-        // WHY: Don't send heartbeats during commutes/driving
 
         // 5. ACTIVITY RECOGNITION - Detect travel modes
-        // CONFIG #2 OPTIMIZED: 1 min → 2 min (+100%)
-        // WHY: Check activity half as often
-        // IMPACT: Reduces activity check triggers by 50%
-        activityRecognitionInterval: 120000, // 2 minutes (was 60000)
+        activityRecognitionInterval: 60000, // 1 minute
         // ═══════════════════════════════════════════════════
         // ⏰ HEARTBEAT BACKUP: Ensure regular updates
         // ═══════════════════════════════════════════════════
-        // WHY: Even if user doesn't move, send heartbeat every 15 min
 
         // 6. HEARTBEAT INTERVAL - Safety net for long stays
-        // WHY: Ensures at least one heartbeat every 15 min when stationary
-        // IMPACT: User at home for 8h = 32 heartbeats (8*60/15)
-        heartbeatInterval: heartbeatSeconds, // 900 seconds = 15 minutes
+        // WHY: 20 min reduces GPS wakeups vs 15 min
+        // IMPACT: User at home for 8h = 24 heartbeats (8*60/20) vs 32 before
+        heartbeatInterval: heartbeatSeconds, // 1200 seconds = 20 minutes
         // ═══════════════════════════════════════════════════
-        // 🔋 ACCURACY SETTINGS: Balance accuracy vs battery
+        // 🔋 ACCURACY SETTINGS
         // ═══════════════════════════════════════════════════
 
-        // 7. DESIRED ACCURACY - Reduced for battery optimization
-        // CONFIG #2 OPTIMIZED: MEDIUM → LOW (BIGGEST BATTERY SAVE!)
-        // WHY: LOW uses GPS sparingly, relies more on cell towers + WiFi
-        // IMPACT: 🔋 **30-40% battery savings** - Major optimization!
-        desiredAccuracy: bg.Config.DESIRED_ACCURACY_LOW, // (was MEDIUM)
+        // 7. DESIRED ACCURACY - LOW uses cell towers + WiFi, avoids GPS chip
+        desiredAccuracy: bg.Config.DESIRED_ACCURACY_LOW,
         // ═══════════════════════════════════════════════════
         // 📱 ANDROID-SPECIFIC: Location Update Intervals
         // ═══════════════════════════════════════════════════
 
-        // 8. LOCATION UPDATE INTERVAL - Fallback for Android
-        // CONFIG #2 OPTIMIZED: 15 min → 20 min (+33%)
-        // WHY: Android FusedLocation API less frequent
-        // IMPACT: Reduces Android-specific triggers
-        locationUpdateInterval: 1200000, // 20 minutes (was 900000)
-        // 9. FASTEST UPDATE INTERVAL - Minimum threshold
-        // CONFIG #2 OPTIMIZED: 5 min → 10 min (+100%)
-        // WHY: Higher minimum threshold between updates
-        // IMPACT: Prevents rapid-fire location updates
-        fastestLocationUpdateInterval: 600000, // 10 min (was 300000)
+        // 8. LOCATION UPDATE INTERVAL
+        locationUpdateInterval: 900000, // 15 minutes
+        // 9. FASTEST UPDATE INTERVAL
+        fastestLocationUpdateInterval: 300000, // 5 minutes
         // ═══════════════════════════════════════════════════
         // 🔥 BACKGROUND OPERATION
         // ═══════════════════════════════════════════════════
@@ -329,7 +301,7 @@ class _HomePageState extends ConsumerState<HomePage> {
         // Notification
         notification: bg.Notification(
           title: "Smart Presence Detection",
-          text: "Tracking significant places (15min heartbeat)",
+          text: "Tracking significant places (20min heartbeat)",
           color: "#4CAF50",
           smallIcon: "drawable/ic_launcher",
           largeIcon: "drawable/ic_launcher",
@@ -639,7 +611,7 @@ class _HomePageState extends ConsumerState<HomePage> {
     _saveTriggerCount(); // Persist to SharedPreferences
     _increment24hTriggers(); // Persist 24h stats
 
-    print('🔔 TRIGGER #$_totalTriggers: Heartbeat (15-min backup)');
+    print('🔔 TRIGGER #$_totalTriggers: Heartbeat (20-min backup)');
     print('   🚗 traveling: $_isTraveling');
 
     // ═══════════════════════════════════════════════════
@@ -883,7 +855,7 @@ class _HomePageState extends ConsumerState<HomePage> {
                 ),
                 const SizedBox(height: 6),
                 Text(
-                  'Motion-based + 15-min heartbeat',
+                  'Motion-based + 20-min heartbeat',
                   style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                     color: Colors.grey.shade600,
                     fontWeight: FontWeight.w500,
