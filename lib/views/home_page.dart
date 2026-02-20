@@ -237,11 +237,12 @@ class _HomePageState extends ConsumerState<HomePage> {
     // Fixed 20-minute heartbeat interval
     const heartbeatMinutes = 20;
     const heartbeatSeconds = heartbeatMinutes * 60; // 1200 seconds
-    const heartbeatMillis = heartbeatMinutes * 60 * 1000; // 1200000 ms
 
     print('🎯 Configuring SMART PRESENCE DETECTION system');
     print('📍 Strategy: Motion-based + Activity detection');
-    print('🔋 Config #3: Previous base config + LOW accuracy + 20min heartbeat');
+    print(
+      '🔋 Config #3: Previous base config + LOW accuracy + 20min heartbeat',
+    );
     print('⏱️  Fixed heartbeat: $heartbeatMinutes minutes');
 
     // Configure the plugin for SMART PRESENCE DETECTION
@@ -321,8 +322,11 @@ class _HomePageState extends ConsumerState<HomePage> {
       _isInitialized = true;
     });
 
-    // Load persisted locations from plugin's database
-    await _loadPersistedLocations();
+    // Load headless heartbeats silently on app open (no snackbar)
+    await _loadHeadlessHeartbeats(showSnackbar: false);
+
+    // Load heartbeats from previous in-session runs (lost on app kill)
+    await _loadPreviousSessionHeartbeats();
 
     // Allow startup events to settle before counting triggers
     Future.delayed(const Duration(seconds: 3), () {
@@ -333,7 +337,7 @@ class _HomePageState extends ConsumerState<HomePage> {
     final state = await bg.BackgroundGeolocation.state;
     final isEnabled = state.enabled;
 
-    print('✅ Background Geolocation initialized with 15-min heartbeat');
+    print('✅ Background Geolocation initialized with 20-min heartbeat');
     print('📊 Current tracking state: ${isEnabled ? "ACTIVE" : "STOPPED"}');
 
     if (isEnabled) {
@@ -342,11 +346,14 @@ class _HomePageState extends ConsumerState<HomePage> {
     }
   }
 
+  // Called by sync button — refreshes counters and shows snackbar
   Future<void> _loadPersistedLocations() async {
-    // Refresh counters from SharedPreferences (picks up headless updates)
     await _loadPersistentState();
     await _load24hStats();
+    await _loadHeadlessHeartbeats(showSnackbar: true);
+  }
 
+  Future<void> _loadHeadlessHeartbeats({required bool showSnackbar}) async {
     try {
       print('📥 Loading headless heartbeats from SharedPreferences...');
 
@@ -357,7 +364,7 @@ class _HomePageState extends ConsumerState<HomePage> {
       print('💓 Found ${heartbeats.length} headless heartbeats');
 
       if (heartbeats.isEmpty) {
-        if (mounted) {
+        if (showSnackbar && mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
               content: Text('No new background heartbeats to sync'),
@@ -371,23 +378,24 @@ class _HomePageState extends ConsumerState<HomePage> {
       // Add in reverse order so newest appears at top
       for (var i = heartbeats.length - 1; i >= 0; i--) {
         final h = heartbeats[i] as Map<String, dynamic>;
-        ref.read(locationProvider.notifier).addLocation(
-          LocationData(
-            latitude: (h['lat'] as num).toDouble(),
-            longitude: (h['lng'] as num).toDouble(),
-            timestamp: DateTime.parse(h['timestamp'] as String),
-            accuracy: (h['accuracy'] as num?)?.toDouble(),
-            speed: (h['speed'] as num?)?.toDouble(),
-            activity: 'heartbeat',
-          ),
-        );
+        ref
+            .read(locationProvider.notifier)
+            .addLocation(
+              LocationData(
+                latitude: (h['lat'] as num).toDouble(),
+                longitude: (h['lng'] as num).toDouble(),
+                timestamp: DateTime.parse(h['timestamp'] as String),
+                accuracy: (h['accuracy'] as num?)?.toDouble(),
+                speed: (h['speed'] as num?)?.toDouble(),
+                activity: 'heartbeat',
+              ),
+            );
       }
 
-      // Clear after loading
       await prefs.remove('headless_heartbeats');
       print('🗑️ Cleared headless heartbeats after loading');
 
-      if (mounted) {
+      if (showSnackbar && mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
@@ -400,7 +408,7 @@ class _HomePageState extends ConsumerState<HomePage> {
       }
     } catch (e) {
       print('❌ Error loading headless heartbeats: $e');
-      if (mounted) {
+      if (showSnackbar && mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('Error syncing: $e'),
@@ -409,6 +417,34 @@ class _HomePageState extends ConsumerState<HomePage> {
         );
       }
     }
+  }
+
+  Future<void> _loadPreviousSessionHeartbeats() async {
+    final prefs = await SharedPreferences.getInstance();
+    final jsonStr = prefs.getString('session_heartbeats') ?? '[]';
+    final List<dynamic> heartbeats = jsonDecode(jsonStr);
+
+    if (heartbeats.isEmpty) return;
+
+    for (var i = heartbeats.length - 1; i >= 0; i--) {
+      final h = heartbeats[i] as Map<String, dynamic>;
+      ref
+          .read(locationProvider.notifier)
+          .addLocation(
+            LocationData(
+              latitude: (h['lat'] as num).toDouble(),
+              longitude: (h['lng'] as num).toDouble(),
+              timestamp: DateTime.parse(h['timestamp'] as String),
+              accuracy: (h['accuracy'] as num?)?.toDouble(),
+              speed: (h['speed'] as num?)?.toDouble(),
+              activity: 'heartbeat',
+            ),
+          );
+    }
+
+    // Clear — current session will re-populate as new heartbeats come in
+    await prefs.remove('session_heartbeats');
+    print('📂 Restored ${heartbeats.length} heartbeats from previous session');
   }
 
   void _onLocation(bg.Location location) {
@@ -449,11 +485,11 @@ class _HomePageState extends ConsumerState<HomePage> {
       return;
     }
 
-    // CHECK 4: Don't send if last heartbeat was < 15 min ago
+    // CHECK 4: Don't send if last heartbeat was < 20 min ago
     final timeSinceLastHeartbeat = DateTime.now().difference(
       _lastHeartbeatTime,
     );
-    if (timeSinceLastHeartbeat.inMinutes < 15) {
+    if (timeSinceLastHeartbeat.inMinutes < 20) {
       print(
         '   ❌ SKIP: Last heartbeat was ${timeSinceLastHeartbeat.inMinutes} min ago',
       );
@@ -488,8 +524,25 @@ class _HomePageState extends ConsumerState<HomePage> {
 
     ref.read(locationProvider.notifier).addLocation(locationData);
 
+    // Persist to SharedPreferences so list survives app restarts
+    _saveHeartbeatToSessionPrefs(locationData);
+
     // TODO: Send to backend server here
     // await http.post(yourServerUrl, body: locationData);
+  }
+
+  Future<void> _saveHeartbeatToSessionPrefs(LocationData data) async {
+    final prefs = await SharedPreferences.getInstance();
+    final existing =
+        jsonDecode(prefs.getString('session_heartbeats') ?? '[]') as List;
+    existing.add({
+      'lat': data.latitude,
+      'lng': data.longitude,
+      'timestamp': data.timestamp.toIso8601String(),
+      'accuracy': data.accuracy,
+      'speed': data.speed,
+    });
+    await prefs.setString('session_heartbeats', jsonEncode(existing));
   }
 
   void _onMotionChange(bg.Location location) {
@@ -577,8 +630,8 @@ class _HomePageState extends ConsumerState<HomePage> {
         // Restore normal settings for presence detection
         await bg.BackgroundGeolocation.setConfig(
           bg.Config(
-            distanceFilter: 300.0, // 300m - normal sensitivity (Config #2)
-            desiredAccuracy: bg.Config.DESIRED_ACCURACY_LOW, // Config #2
+            distanceFilter: 200.0, // restore to base config value
+            desiredAccuracy: bg.Config.DESIRED_ACCURACY_LOW,
           ),
         );
       }
@@ -597,8 +650,8 @@ class _HomePageState extends ConsumerState<HomePage> {
     // ═══════════════════════════════════════════════════
     // HEARTBEAT LOGIC - Backup for long stationary periods
     // ═══════════════════════════════════════════════════
-    // WHY: Ensures at least one heartbeat every 15 min when stationary
-    // EXAMPLE: User at home for 3h = 12 heartbeats
+    // WHY: Ensures at least one heartbeat every 20 min when stationary
+    // EXAMPLE: User at home for 3h = 9 heartbeats
 
     // Don't send if traveling
     if (_isTraveling) {
@@ -626,14 +679,14 @@ class _HomePageState extends ConsumerState<HomePage> {
       print('🟢 Smart presence tracking started!');
       print('📱 App can be closed - tracking will continue');
       print('🔔 You should see a persistent notification');
-      print('⏱️ 15-min heartbeat backup + motion-based tracking');
+      print('⏱️ 20-min heartbeat backup + motion-based tracking');
       ref.read(isTrackingProvider.notifier).state = true;
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text(
-              '✓ Smart presence detection started!\nMotion-based + 15-min heartbeat backup',
+              '✓ Smart presence detection started!\nMotion-based + 20-min heartbeat backup',
             ),
             backgroundColor: Colors.green,
             duration: Duration(seconds: 4),
@@ -673,14 +726,20 @@ class _HomePageState extends ConsumerState<HomePage> {
     }
   }
 
-  void _clearLocations() {
+  Future<void> _clearLocations() async {
     ref.read(locationProvider.notifier).clearLocations();
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('All locations cleared'),
-        duration: Duration(seconds: 1),
-      ),
-    );
+    // Also clear persisted heartbeats so they don't reappear on next app open
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove('session_heartbeats');
+    await prefs.remove('headless_heartbeats');
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('All locations cleared'),
+          duration: Duration(seconds: 1),
+        ),
+      );
+    }
   }
 
   Future<void> _openInMaps(double latitude, double longitude) async {
@@ -983,7 +1042,7 @@ class _HomePageState extends ConsumerState<HomePage> {
                   const SizedBox(width: 12),
                   Expanded(
                     child: Text(
-                      'Heartbeats sent only at significant places (15-min backup)',
+                      'Heartbeats sent only at significant places (20-min backup)',
                       style: TextStyle(
                         color: Colors.blue.shade900,
                         fontSize: 12,

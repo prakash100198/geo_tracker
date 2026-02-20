@@ -82,14 +82,14 @@ void headlessTask(bg.HeadlessEvent headlessEvent) async {
         return;
       }
 
-      // CHECK 4: Don't send if last heartbeat was < 15 min ago
+      // CHECK 4: Don't send if last heartbeat was < 20 min ago
       final lastHeartbeatTime = DateTime.fromMillisecondsSinceEpoch(
         lastHeartbeatMs,
       );
       final timeSinceLastHeartbeat = DateTime.now().difference(
         lastHeartbeatTime,
       );
-      if (timeSinceLastHeartbeat.inMinutes < 15) {
+      if (timeSinceLastHeartbeat.inMinutes < 20) {
         print(
           '   ❌ SKIP: Last heartbeat was ${timeSinceLastHeartbeat.inMinutes} min ago',
         );
@@ -168,7 +168,7 @@ void headlessTask(bg.HeadlessEvent headlessEvent) async {
           // Restore normal config
           await bg.BackgroundGeolocation.setConfig(
             bg.Config(
-              distanceFilter: 300.0,
+              distanceFilter: 200.0, // restore to base config value
               desiredAccuracy: bg.Config.DESIRED_ACCURACY_LOW,
             ),
           );
@@ -177,10 +177,10 @@ void headlessTask(bg.HeadlessEvent headlessEvent) async {
       break;
 
     // ═══════════════════════════════════════════════════════════════
-    // 💓 HEARTBEAT EVENT - 15-min backup timer
+    // 💓 HEARTBEAT EVENT - 20-min backup timer
     // ═══════════════════════════════════════════════════════════════
     case bg.Event.HEARTBEAT:
-      print('💓 Heartbeat event in headless mode (15-min backup)');
+      print('💓 Heartbeat event in headless mode (20-min backup)');
       print('   Traveling: $isTraveling');
 
       // Don't send if traveling
