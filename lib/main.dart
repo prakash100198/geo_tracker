@@ -168,8 +168,8 @@ void headlessTask(bg.HeadlessEvent headlessEvent) async {
           // Restore normal config
           await bg.BackgroundGeolocation.setConfig(
             bg.Config(
-              distanceFilter: 200.0, // restore to base config value
-              desiredAccuracy: bg.Config.DESIRED_ACCURACY_LOW,
+              distanceFilter: 300.0, // restore to base config value
+              desiredAccuracy: bg.Config.DESIRED_ACCURACY_MEDIUM,
             ),
           );
         }

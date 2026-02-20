@@ -66,5 +66,19 @@
 		<string>UIInterfaceOrientationLandscapeLeft</string>
 		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>This app needs your location to track significant places and test battery usage</string>
+	<key>NSLocationAlwaysUsageDescription</key>
+	<string>This app needs background location to detect significant places and send heartbeats every 20 minutes</string>
+	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+	<string>This app needs background location to detect significant places and send heartbeats every 20 minutes</string>
+	<key>NSMotionUsageDescription</key>
+	<string>This app uses motion detection to identify when you are stationary or traveling, to optimise heartbeat frequency</string>
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>location</string>
+		<string>fetch</string>
+		<string>processing</string>
+	</array>
 </dict>
 </plist>

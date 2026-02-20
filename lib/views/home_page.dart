@@ -252,10 +252,10 @@ class _HomePageState extends ConsumerState<HomePage> {
         // 🎯 CORE STRATEGY: Motion-Based Tracking
         // ═══════════════════════════════════════════════════
 
-        // 1. DISTANCE FILTER
-        distanceFilter: 200.0, // meters
-        // 2. STATIONARY RADIUS - Geofence around stopped location
-        stationaryRadius: 100, // meters
+        // 1. DISTANCE FILTER - Absorbs GPS drift, fewer wasted triggers
+        distanceFilter: 300.0, // meters (was 200m)
+        // 2. STATIONARY RADIUS - Larger buffer absorbs GPS noise
+        stationaryRadius: 150, // meters (was 100m)
         // 3. STOP TIMEOUT - Time before considering "stationary"
         stopTimeout: 5, // minutes
         // 4. DISABLE ELASTICITY - Don't auto-adjust distance filter
@@ -265,30 +265,41 @@ class _HomePageState extends ConsumerState<HomePage> {
         // 🚗 TRAVEL SUPPRESSION: Activity Recognition
         // ═══════════════════════════════════════════════════
 
-        // 5. ACTIVITY RECOGNITION - Detect travel modes
-        activityRecognitionInterval: 60000, // 1 minute
+        // 5. ACTIVITY RECOGNITION - Halved to reduce wasted activity triggers
+        activityRecognitionInterval: 120000, // 2 minutes (was 1 min)
         // ═══════════════════════════════════════════════════
         // ⏰ HEARTBEAT BACKUP: Ensure regular updates
         // ═══════════════════════════════════════════════════
 
-        // 6. HEARTBEAT INTERVAL - Safety net for long stays
-        // WHY: 20 min reduces GPS wakeups vs 15 min
-        // IMPACT: User at home for 8h = 24 heartbeats (8*60/20) vs 32 before
+        // 6. HEARTBEAT INTERVAL - Aligns with Android background throttle
+        // IMPACT: User at home for 8h = 24 heartbeats (8*60/20)
         heartbeatInterval: heartbeatSeconds, // 1200 seconds = 20 minutes
         // ═══════════════════════════════════════════════════
         // 🔋 ACCURACY SETTINGS
         // ═══════════════════════════════════════════════════
 
-        // 7. DESIRED ACCURACY - LOW uses cell towers + WiFi, avoids GPS chip
-        desiredAccuracy: bg.Config.DESIRED_ACCURACY_LOW,
+        // 7. DESIRED ACCURACY - MEDIUM: reliable activity recognition (STILL/in_vehicle)
+        //    without GPS chip. LOW caused UNKNOWN activity → broken travel detection
+        desiredAccuracy: bg.Config.DESIRED_ACCURACY_MEDIUM,
+
         // ═══════════════════════════════════════════════════
-        // 📱 ANDROID-SPECIFIC: Location Update Intervals
+        // 🚫 MOTION TRIGGER DEBOUNCE (Android only)
         // ═══════════════════════════════════════════════════
 
-        // 8. LOCATION UPDATE INTERVAL
-        locationUpdateInterval: 900000, // 15 minutes
-        // 9. FASTEST UPDATE INTERVAL
-        fastestLocationUpdateInterval: 300000, // 5 minutes
+        // 8. MOTION TRIGGER DELAY - Cancels brief movement triggers
+        // HOW: If movement stops within 30s → trigger CANCELLED entirely (not delayed)
+        // IMPACT: Walking to kitchen, shifting in chair → zero triggers fired
+        motionTriggerDelay: 30000, // 30 seconds
+
+        // ═══════════════════════════════════════════════════
+        // 🔋 BATTERY: LOCATION BATCHING (Android only)
+        // ═══════════════════════════════════════════════════
+
+        // 9. DEFER TIME - Batch location delivery to reduce CPU wake-ups
+        // HOW: OS holds fixes for 30s and delivers all at once (1 wake vs many)
+        // IMPACT: Same trigger count, fewer CPU/radio wake-ups → battery saving
+        deferTime: 30000, // 30 seconds
+
         // ═══════════════════════════════════════════════════
         // 🔥 BACKGROUND OPERATION
         // ═══════════════════════════════════════════════════
@@ -299,9 +310,16 @@ class _HomePageState extends ConsumerState<HomePage> {
         startOnBoot: true, // Resume after phone restart
         foregroundService: true, // Required for Android background
         enableHeadless: true, // Critical for background operation
-        // iOS specific
+        // ═══════════════════════════════════════════════════
+        // 🍎 iOS SPECIFIC
+        // ═══════════════════════════════════════════════════
         pausesLocationUpdatesAutomatically: false,
         activityType: bg.Config.ACTIVITY_TYPE_OTHER,
+        // CRITICAL: prevents iOS from suspending app after screen locks
+        // Without this, heartbeats stop firing ~2 min after screen goes dark
+        // motionTriggerDelay and deferTime are Android-only;
+        // iOS handles debouncing via M-series coprocessor internally
+        preventSuspend: true,
 
         // Notification
         notification: bg.Notification(
@@ -630,8 +648,8 @@ class _HomePageState extends ConsumerState<HomePage> {
         // Restore normal settings for presence detection
         await bg.BackgroundGeolocation.setConfig(
           bg.Config(
-            distanceFilter: 200.0, // restore to base config value
-            desiredAccuracy: bg.Config.DESIRED_ACCURACY_LOW,
+            distanceFilter: 300.0, // restore to base config value
+            desiredAccuracy: bg.Config.DESIRED_ACCURACY_MEDIUM,
           ),
         );
       }
