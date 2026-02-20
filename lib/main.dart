@@ -215,6 +215,15 @@ Future<void> _sendHeadlessHeartbeat(
   bg.Location location,
   int currentHeartbeats,
 ) async {
+  // Accuracy gate: skip if fix is too poor (cell-tower-only noise)
+  final accuracy = location.coords.accuracy;
+  if (accuracy != null && accuracy > 500) {
+    print(
+      '   ❌ HEADLESS SKIP: Poor accuracy (${accuracy.toStringAsFixed(0)}m > 500m)',
+    );
+    return;
+  }
+
   // Increment heartbeat counter
   final newHeartbeats = currentHeartbeats + 1;
   await prefs.setInt('total_heartbeats', newHeartbeats);

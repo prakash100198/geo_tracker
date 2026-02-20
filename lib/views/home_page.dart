@@ -313,6 +313,8 @@ class _HomePageState extends ConsumerState<HomePage> {
         // ═══════════════════════════════════════════════════
         // 🍎 iOS SPECIFIC
         // ═══════════════════════════════════════════════════
+        // Explicitly request "Always" so plugin prompts for background permission
+        locationAuthorizationRequest: 'Always',
         pausesLocationUpdatesAutomatically: false,
         activityType: bg.Config.ACTIVITY_TYPE_OTHER,
         // CRITICAL: prevents iOS from suspending app after screen locks
@@ -320,6 +322,8 @@ class _HomePageState extends ConsumerState<HomePage> {
         // motionTriggerDelay and deferTime are Android-only;
         // iOS handles debouncing via M-series coprocessor internally
         preventSuspend: true,
+        // Show blue location indicator bar on iOS 11+ (recommended by Apple)
+        showsBackgroundLocationIndicator: true,
 
         // Notification
         notification: bg.Notification(
@@ -520,6 +524,16 @@ class _HomePageState extends ConsumerState<HomePage> {
   }
 
   void _sendHeartbeat(bg.Location location) {
+    // Accuracy gate: skip if fix is too poor (cell-tower-only noise)
+    // Equivalent to Radar.io's approach — prevents junk locations
+    final accuracy = location.coords.accuracy;
+    if (accuracy != null && accuracy > 500) {
+      print(
+        '   ❌ SKIP: Poor accuracy (${accuracy.toStringAsFixed(0)}m > 500m)',
+      );
+      return;
+    }
+
     _totalHeartbeats++;
     _lastHeartbeatTime = DateTime.now();
     _saveHeartbeatCount(); // Persist to SharedPreferences
