@@ -85,7 +85,6 @@ class _HomePageState extends ConsumerState<HomePage> {
   // 24-hour stats tracking
   int _triggers24h = 0;
   int _heartbeats24h = 0;
-  DateTime? _stats24hStartTime;
 
   @override
   void initState() {
@@ -178,7 +177,6 @@ class _HomePageState extends ConsumerState<HomePage> {
         await _reset24hStats();
       } else {
         setState(() {
-          _stats24hStartTime = startTime;
           _triggers24h = triggers;
           _heartbeats24h = heartbeats;
         });
@@ -201,7 +199,6 @@ class _HomePageState extends ConsumerState<HomePage> {
     await prefs.setInt('heartbeats_24h', 0);
 
     setState(() {
-      _stats24hStartTime = now;
       _triggers24h = 0;
       _heartbeats24h = 0;
     });
@@ -480,7 +477,7 @@ class _HomePageState extends ConsumerState<HomePage> {
       '   📍 Coords: ${location.coords.latitude}, ${location.coords.longitude}',
     );
     print('   🏃 isMoving: ${location.isMoving}');
-    print('   ⚡ speed: ${location.coords.speed ?? 0} m/s');
+    print('   ⚡ speed: ${location.coords.speed} m/s');
     print('   🎯 activity: $_currentActivity');
     print('   🚗 traveling: $_isTraveling');
 
@@ -501,7 +498,8 @@ class _HomePageState extends ConsumerState<HomePage> {
     }
 
     // CHECK 3: Don't send if high speed (>2 m/s = ~7 km/h)
-    final speed = location.coords.speed ?? 0.0;
+    // Note: speed is -1 on iOS/Android when unavailable (not null in v5)
+    final speed = location.coords.speed;
     if (speed > 2.0) {
       print('   ❌ SKIP: Speed too high (${speed.toStringAsFixed(1)} m/s)');
       return;
@@ -527,7 +525,7 @@ class _HomePageState extends ConsumerState<HomePage> {
     // Accuracy gate: skip if fix is too poor (cell-tower-only noise)
     // Equivalent to Radar.io's approach — prevents junk locations
     final accuracy = location.coords.accuracy;
-    if (accuracy != null && accuracy > 500) {
+    if (accuracy > 500) {
       print(
         '   ❌ SKIP: Poor accuracy (${accuracy.toStringAsFixed(0)}m > 500m)',
       );
@@ -720,7 +718,7 @@ class _HomePageState extends ConsumerState<HomePage> {
 
   Future<void> _startTracking() async {
     try {
-      final state = await bg.BackgroundGeolocation.start();
+      await bg.BackgroundGeolocation.start();
       print('🟢 Smart presence tracking started!');
       print('📱 App can be closed - tracking will continue');
       print('🔔 You should see a persistent notification');
@@ -753,7 +751,7 @@ class _HomePageState extends ConsumerState<HomePage> {
 
   Future<void> _stopTracking() async {
     try {
-      final state = await bg.BackgroundGeolocation.stop();
+      await bg.BackgroundGeolocation.stop();
       print('🔴 Tracking stopped - Background tracking disabled');
       ref.read(isTrackingProvider.notifier).state = false;
 
@@ -773,12 +771,14 @@ class _HomePageState extends ConsumerState<HomePage> {
 
   Future<void> _clearLocations() async {
     ref.read(locationProvider.notifier).clearLocations();
+    // Capture messenger before async gaps to avoid BuildContext across async warning
+    final messenger = ScaffoldMessenger.of(context);
     // Also clear persisted heartbeats so they don't reappear on next app open
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove('session_heartbeats');
     await prefs.remove('headless_heartbeats');
     if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
+      messenger.showSnackBar(
         const SnackBar(
           content: Text('All locations cleared'),
           duration: Duration(seconds: 1),
@@ -912,7 +912,7 @@ class _HomePageState extends ConsumerState<HomePage> {
               ),
               boxShadow: [
                 BoxShadow(
-                  color: Colors.black.withOpacity(0.05),
+                  color: Colors.black.withValues(alpha: 0.05),
                   blurRadius: 8,
                   offset: const Offset(0, 2),
                 ),
@@ -952,7 +952,7 @@ class _HomePageState extends ConsumerState<HomePage> {
                     vertical: 8,
                   ),
                   decoration: BoxDecoration(
-                    color: _getActivityColor(currentActivity).withOpacity(0.2),
+                    color: _getActivityColor(currentActivity).withValues(alpha: 0.2),
                     borderRadius: BorderRadius.circular(20),
                   ),
                   child: Row(
@@ -1037,9 +1037,10 @@ class _HomePageState extends ConsumerState<HomePage> {
                       const SizedBox(width: 8),
                       InkWell(
                         onTap: () async {
+                          final messenger = ScaffoldMessenger.of(context);
                           await _reset24hStats();
                           if (mounted) {
-                            ScaffoldMessenger.of(context).showSnackBar(
+                            messenger.showSnackBar(
                               const SnackBar(
                                 content: Text('✓ 24h stats reset'),
                                 backgroundColor: Colors.green,

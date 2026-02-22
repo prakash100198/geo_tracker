@@ -55,7 +55,7 @@ void headlessTask(bg.HeadlessEvent headlessEvent) async {
       print('📍 Location event in headless mode');
       print('   Coords: ${location.coords.latitude}, ${location.coords.longitude}');
       print('   isMoving: ${location.isMoving}');
-      print('   Speed: ${location.coords.speed ?? 0} m/s');
+      print('   Speed: ${location.coords.speed} m/s');
       print('   Activity: $currentActivity');
       print('   Traveling: $isTraveling');
 
@@ -76,7 +76,8 @@ void headlessTask(bg.HeadlessEvent headlessEvent) async {
       }
 
       // CHECK 3: Don't send if high speed
-      final speed = location.coords.speed ?? 0.0;
+      // Note: speed is -1 on iOS/Android when unavailable (not null in v5)
+      final speed = location.coords.speed;
       if (speed > 2.0) {
         print('   ❌ SKIP: Speed too high (${speed.toStringAsFixed(1)} m/s)');
         return;
@@ -234,7 +235,7 @@ Future<void> _sendHeadlessHeartbeat(
 ) async {
   // Accuracy gate: skip if fix is too poor (cell-tower-only noise)
   final accuracy = location.coords.accuracy;
-  if (accuracy != null && accuracy > 500) {
+  if (accuracy > 500) {
     print(
       '   ❌ HEADLESS SKIP: Poor accuracy (${accuracy.toStringAsFixed(0)}m > 500m)',
     );
