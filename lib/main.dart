@@ -183,24 +183,41 @@ void headlessTask(bg.HeadlessEvent headlessEvent) async {
       print('💓 Heartbeat event in headless mode (20-min backup)');
       print('   Traveling: $isTraveling');
 
-      // Don't send if traveling
       if (isTraveling) {
         print('   ❌ SKIP: User is traveling');
         return;
       }
 
+      final heartbeatEvent = headlessEvent.event as bg.HeartbeatEvent;
+
+      // ── PATH 1: Use last-known position from the heartbeat event ──────
+      // Instant, never fails — no async call needed
+      if (heartbeatEvent.location != null) {
+        print('   ✅ SEND HEARTBEAT: Using last-known position (headless)');
+        await _sendHeadlessHeartbeat(
+          prefs,
+          heartbeatEvent.location!,
+          totalHeartbeats,
+        );
+        break;
+      }
+
+      // ── PATH 2: Fetch fresh position with background task guard ───────
+      // CRITICAL: startBackgroundTask prevents Android from suspending the
+      // isolate mid-await, which was silently killing getCurrentPosition.
+      final taskId = await bg.BackgroundGeolocation.startBackgroundTask();
       try {
-        // Get current position
         final location = await bg.BackgroundGeolocation.getCurrentPosition(
           samples: 1,
           persist: false,
           timeout: 30,
         );
-
         print('   ✅ SEND HEARTBEAT: Stationary backup ping (headless)');
         await _sendHeadlessHeartbeat(prefs, location, totalHeartbeats);
       } catch (e) {
         print('   ❌ Error getting position: $e');
+      } finally {
+        bg.BackgroundGeolocation.stopBackgroundTask(taskId);
       }
       break;
 

@@ -683,25 +683,38 @@ class _HomePageState extends ConsumerState<HomePage> {
     // HEARTBEAT LOGIC - Backup for long stationary periods
     // ═══════════════════════════════════════════════════
     // WHY: Ensures at least one heartbeat every 20 min when stationary
-    // EXAMPLE: User at home for 3h = 9 heartbeats
 
-    // Don't send if traveling
     if (_isTraveling) {
       print('   ❌ SKIP: User is traveling');
       return;
     }
 
+    // ── PATH 1: Use last-known position from the heartbeat event ──────────
+    // HeartbeatEvent.location is the last position the plugin cached.
+    // This is instant, never fails, and is accurate enough for presence.
+    if (event.location != null) {
+      print('   ✅ SEND HEARTBEAT: Using last-known position from event');
+      _sendHeartbeat(event.location!);
+      return;
+    }
+
+    // ── PATH 2: Fetch fresh position ──────────────────────────────────────
+    // CRITICAL: Must call startBackgroundTask() first.
+    // Without it, Android suspends the app mid-await and getCurrentPosition
+    // silently times out — the trigger fires but no heartbeat is ever sent.
+    final taskId = await bg.BackgroundGeolocation.startBackgroundTask();
     try {
       final location = await bg.BackgroundGeolocation.getCurrentPosition(
         samples: 1,
         persist: false,
         timeout: 30,
       );
-
-      print('   ✅ SEND HEARTBEAT: Stationary backup ping');
+      print('   ✅ SEND HEARTBEAT: Stationary backup ping (fresh position)');
       _sendHeartbeat(location);
     } catch (e) {
       print('   ❌ Error getting position: $e');
+    } finally {
+      bg.BackgroundGeolocation.stopBackgroundTask(taskId);
     }
   }
 
