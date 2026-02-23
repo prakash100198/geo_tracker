@@ -53,7 +53,9 @@ void headlessTask(bg.HeadlessEvent headlessEvent) async {
       final location = headlessEvent.event as bg.Location;
 
       print('📍 Location event in headless mode');
-      print('   Coords: ${location.coords.latitude}, ${location.coords.longitude}');
+      print(
+        '   Coords: ${location.coords.latitude}, ${location.coords.longitude}',
+      );
       print('   isMoving: ${location.isMoving}');
       print('   Speed: ${location.coords.speed} m/s');
       print('   Activity: $currentActivity');
@@ -169,7 +171,7 @@ void headlessTask(bg.HeadlessEvent headlessEvent) async {
           // Restore normal config
           await bg.BackgroundGeolocation.setConfig(
             bg.Config(
-              distanceFilter: 300.0, // restore to base config value
+              distanceFilter: 200.0, // restore to base config value
               desiredAccuracy: bg.Config.DESIRED_ACCURACY_MEDIUM,
             ),
           );

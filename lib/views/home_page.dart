@@ -255,7 +255,7 @@ class _HomePageState extends ConsumerState<HomePage> {
         // ═══════════════════════════════════════════════════
 
         // 1. DISTANCE FILTER - Absorbs GPS drift, fewer wasted triggers
-        distanceFilter: 300.0, // meters (was 200m)
+        distanceFilter: 200.0, // meters
         // 2. STATIONARY RADIUS - Larger buffer absorbs GPS noise
         stationaryRadius: 150, // meters (was 100m)
         // 3. STOP TIMEOUT - Time before considering "stationary"
@@ -643,12 +643,12 @@ class _HomePageState extends ConsumerState<HomePage> {
 
       if (wasTraveling) {
         print('   🏠 PRESENCE MODE ACTIVATED');
-        print('   ⚙️  Restoring distanceFilter to 300m for presence detection');
+        print('   ⚙️  Restoring distanceFilter to 200m for presence detection');
 
         // Restore normal settings for presence detection
         await bg.BackgroundGeolocation.setConfig(
           bg.Config(
-            distanceFilter: 300.0, // restore to base config value
+            distanceFilter: 200.0, // restore to base config value
             desiredAccuracy: bg.Config.DESIRED_ACCURACY_MEDIUM,
           ),
         );
