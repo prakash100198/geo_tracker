@@ -320,7 +320,7 @@ class _HomePageState extends ConsumerState<HomePage> {
 
         // Debug
         logLevel: bg.Config.LOG_LEVEL_VERBOSE,
-        debug: true,
+        debug: false,
       ),
     );
 
