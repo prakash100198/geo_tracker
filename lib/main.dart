@@ -33,16 +33,8 @@ void headlessTask(bg.HeadlessEvent headlessEvent) async {
   int totalTriggers = prefs.getInt('total_triggers') ?? 0;
   int totalHeartbeats = prefs.getInt('total_heartbeats') ?? 0;
 
-  // Increment triggers for ANY event
-  totalTriggers++;
-  await prefs.setInt('total_triggers', totalTriggers);
-
-  // Also increment 24h triggers
-  int triggers24h = prefs.getInt('triggers_24h') ?? 0;
-  triggers24h++;
-  await prefs.setInt('triggers_24h', triggers24h);
-
-  print('🔔 HEADLESS TRIGGER #$totalTriggers');
+  // NOTE: trigger counters are incremented per-case AFTER the travel check,
+  // so vehicle-mode wake-ups do not inflate the efficiency denominator.
 
   // Handle different event types
   switch (headlessEvent.name) {
@@ -52,26 +44,28 @@ void headlessTask(bg.HeadlessEvent headlessEvent) async {
     case bg.Event.LOCATION:
       final location = headlessEvent.event as bg.Location;
 
-      print('📍 Location event in headless mode');
+      // Silently ignore location events during vehicle travel.
+      if (isTraveling) return;
+
+      totalTriggers++;
+      await prefs.setInt('total_triggers', totalTriggers);
+      int locTriggers24h = prefs.getInt('triggers_24h') ?? 0;
+      locTriggers24h++;
+      await prefs.setInt('triggers_24h', locTriggers24h);
+
+      print('🔔 HEADLESS TRIGGER #$totalTriggers: Location event');
       print(
         '   Coords: ${location.coords.latitude}, ${location.coords.longitude}',
       );
       print('   isMoving: ${location.isMoving}');
       print('   Speed: ${location.coords.speed} m/s');
       print('   Activity: $currentActivity');
-      print('   Traveling: $isTraveling');
 
       // ═══════════════════════════════════════════════════════════
       // SMART HEARTBEAT LOGIC - Same as when app is open
       // ═══════════════════════════════════════════════════════════
 
-      // CHECK 1: Don't send if traveling
-      if (isTraveling) {
-        print('   ❌ SKIP: User is traveling');
-        return;
-      }
-
-      // CHECK 2: Don't send if moving
+      // CHECK 1: Don't send if moving
       if (location.isMoving) {
         print('   ❌ SKIP: User is moving');
         return;
@@ -111,18 +105,23 @@ void headlessTask(bg.HeadlessEvent headlessEvent) async {
       final location = headlessEvent.event as bg.Location;
       final isMoving = location.isMoving;
 
-      print('🏃 Motion change in headless mode');
-      print('   Status: ${isMoving ? "MOVING" : "STATIONARY"}');
-      print('   Traveling: $isTraveling');
+      // Silently ignore motion events during vehicle travel.
+      if (isTraveling) return;
 
-      // When user STOPS and NOT traveling → immediate heartbeat
-      if (!isMoving && !isTraveling) {
+      totalTriggers++;
+      await prefs.setInt('total_triggers', totalTriggers);
+      int motTriggers24h = prefs.getInt('triggers_24h') ?? 0;
+      motTriggers24h++;
+      await prefs.setInt('triggers_24h', motTriggers24h);
+
+      print('🔔 HEADLESS TRIGGER #$totalTriggers: Motion change → ${isMoving ? "MOVING" : "STATIONARY"}');
+
+      // When user STOPS → immediate heartbeat
+      if (!isMoving) {
         print('   ✅ IMMEDIATE HEARTBEAT: User arrived at location');
         await _sendHeadlessHeartbeat(prefs, location, totalHeartbeats);
-      } else if (isMoving) {
-        print('   ℹ️  User started moving - will send when they stop');
       } else {
-        print('   ❌ SKIP: User stationary but traveling');
+        print('   ℹ️  User started moving - will send when they stop');
       }
       break;
 
@@ -132,7 +131,18 @@ void headlessTask(bg.HeadlessEvent headlessEvent) async {
     case bg.Event.ACTIVITYCHANGE:
       final activity = headlessEvent.event as bg.ActivityChangeEvent;
 
-      print('🎯 Activity change in headless mode');
+      // Activity change MUST always run to detect travel transitions.
+      // Only count as trigger in presence-detection mode.
+      if (!isTraveling) {
+        totalTriggers++;
+        await prefs.setInt('total_triggers', totalTriggers);
+        int actTriggers24h = prefs.getInt('triggers_24h') ?? 0;
+        actTriggers24h++;
+        await prefs.setInt('triggers_24h', actTriggers24h);
+        print('🔔 HEADLESS TRIGGER #$totalTriggers: Activity change');
+      } else {
+        print('🔔 Activity change (travel mode — not counted as trigger)');
+      }
       print('   Activity: ${activity.activity} (${activity.confidence}%)');
 
       // Update current activity
@@ -183,13 +193,16 @@ void headlessTask(bg.HeadlessEvent headlessEvent) async {
     // 💓 HEARTBEAT EVENT - 20-min backup timer
     // ═══════════════════════════════════════════════════════════════
     case bg.Event.HEARTBEAT:
-      print('💓 Heartbeat event in headless mode (20-min backup)');
-      print('   Traveling: $isTraveling');
+      // Silently ignore the 20-min backup timer during vehicle travel.
+      if (isTraveling) return;
 
-      if (isTraveling) {
-        print('   ❌ SKIP: User is traveling');
-        return;
-      }
+      totalTriggers++;
+      await prefs.setInt('total_triggers', totalTriggers);
+      int hbTriggers24h = prefs.getInt('triggers_24h') ?? 0;
+      hbTriggers24h++;
+      await prefs.setInt('triggers_24h', hbTriggers24h);
+
+      print('🔔 HEADLESS TRIGGER #$totalTriggers: Heartbeat (20-min backup)');
 
       final heartbeatEvent = headlessEvent.event as bg.HeartbeatEvent;
 

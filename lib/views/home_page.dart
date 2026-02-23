@@ -455,7 +455,13 @@ class _HomePageState extends ConsumerState<HomePage> {
 
   void _onLocation(bg.Location location) {
     if (_isInitializing) return;
-    _totalTriggers++; // Count every wake-up
+
+    // Silently ignore location events during vehicle travel.
+    // At speed the plugin fires every ~200-500 m — counting these inflates
+    // the trigger denominator without ever producing a heartbeat.
+    if (_isTraveling) return;
+
+    _totalTriggers++; // Count every presence-mode wake-up
     _saveTriggerCount(); // Persist to SharedPreferences
     _increment24hTriggers(); // Persist 24h stats
 
@@ -466,25 +472,18 @@ class _HomePageState extends ConsumerState<HomePage> {
     print('   🏃 isMoving: ${location.isMoving}');
     print('   ⚡ speed: ${location.coords.speed} m/s');
     print('   🎯 activity: $_currentActivity');
-    print('   🚗 traveling: $_isTraveling');
 
     // ═══════════════════════════════════════════════════
     // SMART HEARTBEAT LOGIC - Decide if should send
     // ═══════════════════════════════════════════════════
 
-    // CHECK 1: Don't send if traveling
-    if (_isTraveling) {
-      print('   ❌ SKIP: User is traveling');
-      return;
-    }
-
-    // CHECK 2: Don't send if moving
+    // CHECK 1: Don't send if moving
     if (location.isMoving) {
       print('   ❌ SKIP: User is moving');
       return;
     }
 
-    // CHECK 3: Don't send if high speed (>2 m/s = ~7 km/h)
+    // CHECK 2: Don't send if high speed (>2 m/s = ~7 km/h)
     // Note: speed is -1 on iOS/Android when unavailable (not null in v5)
     final speed = location.coords.speed;
     if (speed > 2.0) {
@@ -492,7 +491,7 @@ class _HomePageState extends ConsumerState<HomePage> {
       return;
     }
 
-    // CHECK 4: Don't send if last heartbeat was < 20 min ago
+    // CHECK 3: Don't send if last heartbeat was < 20 min ago
     final timeSinceLastHeartbeat = DateTime.now().difference(
       _lastHeartbeatTime,
     );
@@ -565,6 +564,10 @@ class _HomePageState extends ConsumerState<HomePage> {
 
   void _onMotionChange(bg.Location location) {
     if (_isInitializing) return;
+
+    // Silently ignore motion events during vehicle travel.
+    if (_isTraveling) return;
+
     _totalTriggers++;
     _saveTriggerCount(); // Persist to SharedPreferences
     _increment24hTriggers(); // Persist 24h stats
@@ -573,7 +576,6 @@ class _HomePageState extends ConsumerState<HomePage> {
     print(
       '🔔 TRIGGER #$_totalTriggers: Motion change → ${isMoving ? "MOVING" : "STATIONARY"}',
     );
-    print('   🚗 traveling: $_isTraveling');
 
     // ═══════════════════════════════════════════════════
     // MOTION CHANGE LOGIC
@@ -581,25 +583,29 @@ class _HomePageState extends ConsumerState<HomePage> {
     // WHY: This fires when user starts/stops moving
     // KEY INSIGHT: When user STOPS, they've arrived at a significant place!
 
-    if (!isMoving && !_isTraveling) {
-      // User just became stationary (not traveling)
-      // This is a HIGH CONFIDENCE event - user arrived somewhere!
+    if (!isMoving) {
+      // User just became stationary — this is a HIGH CONFIDENCE presence event
       print('   ✅ IMMEDIATE HEARTBEAT: User arrived at location');
       _sendHeartbeat(location);
-    } else if (isMoving) {
-      print('   ℹ️  User started moving - will send heartbeat when they stop');
     } else {
-      print('   ❌ SKIP: User stationary but traveling mode detected');
+      print('   ℹ️  User started moving - will send heartbeat when they stop');
     }
   }
 
   void _onActivityChange(bg.ActivityChangeEvent event) async {
     if (_isInitializing) return;
-    _totalTriggers++;
-    _saveTriggerCount(); // Persist to SharedPreferences
-    _increment24hTriggers(); // Persist 24h stats
 
-    print('🔔 TRIGGER #$_totalTriggers: Activity change');
+    // Activity change MUST always run — it's how we detect travel transitions.
+    // Only count it as a trigger when we are in presence-detection mode;
+    // during travel these are background infrastructure events.
+    if (!_isTraveling) {
+      _totalTriggers++;
+      _saveTriggerCount();
+      _increment24hTriggers();
+      print('🔔 TRIGGER #$_totalTriggers: Activity change');
+    } else {
+      print('🔔 Activity change (travel mode — not counted as trigger)');
+    }
     print(
       '   🎯 Activity: ${event.activity} (confidence: ${event.confidence}%)',
     );
@@ -658,22 +664,20 @@ class _HomePageState extends ConsumerState<HomePage> {
 
   void _onHeartbeat(bg.HeartbeatEvent event) async {
     if (_isInitializing) return;
+
+    // Silently ignore the 20-min backup timer during vehicle travel.
+    if (_isTraveling) return;
+
     _totalTriggers++;
     _saveTriggerCount(); // Persist to SharedPreferences
     _increment24hTriggers(); // Persist 24h stats
 
     print('🔔 TRIGGER #$_totalTriggers: Heartbeat (20-min backup)');
-    print('   🚗 traveling: $_isTraveling');
 
     // ═══════════════════════════════════════════════════
     // HEARTBEAT LOGIC - Backup for long stationary periods
     // ═══════════════════════════════════════════════════
     // WHY: Ensures at least one heartbeat every 20 min when stationary
-
-    if (_isTraveling) {
-      print('   ❌ SKIP: User is traveling');
-      return;
-    }
 
     // ── PATH 1: Use last-known position from the heartbeat event ──────────
     // HeartbeatEvent.location is the last position the plugin cached.
