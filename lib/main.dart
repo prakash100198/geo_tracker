@@ -233,11 +233,12 @@ Future<void> _sendHeadlessHeartbeat(
   bg.Location location,
   int currentHeartbeats,
 ) async {
-  // Accuracy gate: skip if fix is too poor (cell-tower-only noise)
+  // Accuracy gate: skip only truly junk cell-tower-only fixes
+  // 1000m matches Radar.io's hard cutoff
   final accuracy = location.coords.accuracy;
-  if (accuracy > 500) {
+  if (accuracy > 1000) {
     print(
-      '   ❌ HEADLESS SKIP: Poor accuracy (${accuracy.toStringAsFixed(0)}m > 500m)',
+      '   ❌ HEADLESS SKIP: Poor accuracy (${accuracy.toStringAsFixed(0)}m > 1000m)',
     );
     return;
   }

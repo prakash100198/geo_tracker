@@ -280,24 +280,6 @@ class _HomePageState extends ConsumerState<HomePage> {
         desiredAccuracy: bg.Config.DESIRED_ACCURACY_MEDIUM,
 
         // ═══════════════════════════════════════════════════
-        // 🚫 MOTION TRIGGER DEBOUNCE (Android only)
-        // ═══════════════════════════════════════════════════
-
-        // 8. MOTION TRIGGER DELAY - Cancels brief movement triggers
-        // HOW: If movement stops within 30s → trigger CANCELLED entirely (not delayed)
-        // IMPACT: Walking to kitchen, shifting in chair → zero triggers fired
-        motionTriggerDelay: 30000, // 30 seconds
-
-        // ═══════════════════════════════════════════════════
-        // 🔋 BATTERY: LOCATION BATCHING (Android only)
-        // ═══════════════════════════════════════════════════
-
-        // 9. DEFER TIME - Batch location delivery to reduce CPU wake-ups
-        // HOW: OS holds fixes for 30s and delivers all at once (1 wake vs many)
-        // IMPACT: Same trigger count, fewer CPU/radio wake-ups → battery saving
-        deferTime: 30000, // 30 seconds
-
-        // ═══════════════════════════════════════════════════
         // 🔥 BACKGROUND OPERATION
         // ═══════════════════════════════════════════════════
         // Disable auto-persist — only manual heartbeat saves go to storage
@@ -316,8 +298,6 @@ class _HomePageState extends ConsumerState<HomePage> {
         activityType: bg.Config.ACTIVITY_TYPE_OTHER,
         // CRITICAL: prevents iOS from suspending app after screen locks
         // Without this, heartbeats stop firing ~2 min after screen goes dark
-        // motionTriggerDelay and deferTime are Android-only;
-        // iOS handles debouncing via M-series coprocessor internally
         preventSuspend: true,
         // Show blue location indicator bar on iOS 11+ (recommended by Apple)
         showsBackgroundLocationIndicator: true,
@@ -522,12 +502,13 @@ class _HomePageState extends ConsumerState<HomePage> {
   }
 
   void _sendHeartbeat(bg.Location location) {
-    // Accuracy gate: skip if fix is too poor (cell-tower-only noise)
-    // Equivalent to Radar.io's approach — prevents junk locations
+    // Accuracy gate: skip only truly junk cell-tower-only fixes
+    // 1000m matches Radar.io's hard cutoff; MEDIUM accuracy (WiFi+cell)
+    // regularly returns 300-800m which is fine for presence detection
     final accuracy = location.coords.accuracy;
-    if (accuracy > 500) {
+    if (accuracy > 1000) {
       print(
-        '   ❌ SKIP: Poor accuracy (${accuracy.toStringAsFixed(0)}m > 500m)',
+        '   ❌ SKIP: Poor accuracy (${accuracy.toStringAsFixed(0)}m > 1000m)',
       );
       return;
     }
@@ -952,7 +933,9 @@ class _HomePageState extends ConsumerState<HomePage> {
                     vertical: 8,
                   ),
                   decoration: BoxDecoration(
-                    color: _getActivityColor(currentActivity).withValues(alpha: 0.2),
+                    color: _getActivityColor(
+                      currentActivity,
+                    ).withValues(alpha: 0.2),
                     borderRadius: BorderRadius.circular(20),
                   ),
                   child: Row(
