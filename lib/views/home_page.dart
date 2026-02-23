@@ -121,6 +121,11 @@ class _HomePageState extends ConsumerState<HomePage> {
       }
     });
 
+    // Sync the UI badge — currentActivityProvider is separate from _currentActivity
+    // and starts at 'unknown' on every app open until an activity event fires.
+    // Without this, the badge shows 'unknown' even when last saved was 'still'.
+    ref.read(currentActivityProvider.notifier).state = activity;
+
     print('💾 Loaded persistent state:');
     print('   Traveling: $_isTraveling');
     print('   Activity: $_currentActivity');
@@ -262,8 +267,10 @@ class _HomePageState extends ConsumerState<HomePage> {
         // 🚗 TRAVEL SUPPRESSION: Activity Recognition
         // ═══════════════════════════════════════════════════
 
-        // 5. ACTIVITY RECOGNITION - Halved to reduce wasted activity triggers
-        activityRecognitionInterval: 120000, // 2 minutes (was 1 min)
+        // 5. ACTIVITY RECOGNITION - 60s: fast STILL detection without too many extra triggers
+        //    120000 (2 min) was causing persistent UNKNOWN because the API
+        //    needs a few samples before it's confident enough to report STILL
+        activityRecognitionInterval: 60000, // 60 seconds
         // ═══════════════════════════════════════════════════
         // ⏰ HEARTBEAT BACKUP: Ensure regular updates
         // ═══════════════════════════════════════════════════
