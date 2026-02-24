@@ -508,6 +508,17 @@ class _HomePageState extends ConsumerState<HomePage> {
   }
 
   void _sendHeartbeat(bg.Location location) {
+    // Global minimum cooldown guard — prevents duplicate heartbeats when multiple
+    // event paths (_onMotionChange, _onHeartbeat, _onLocation) fire in rapid
+    // succession (e.g. motion-stop + heartbeat timer both pending on startup).
+    final timeSinceLast = DateTime.now().difference(_lastHeartbeatTime);
+    if (timeSinceLast.inMinutes < 2) {
+      print(
+        '   ❌ SKIP: Duplicate prevented (${timeSinceLast.inSeconds}s since last heartbeat)',
+      );
+      return;
+    }
+
     // Accuracy gate: skip only truly junk cell-tower-only fixes
     // 1000m matches Radar.io's hard cutoff; MEDIUM accuracy (WiFi+cell)
     // regularly returns 300-800m which is fine for presence detection
@@ -594,6 +605,19 @@ class _HomePageState extends ConsumerState<HomePage> {
 
   void _onActivityChange(bg.ActivityChangeEvent event) async {
     if (_isInitializing) return;
+
+    // iOS quality filter: CMMotionActivityManager fires live updates continuously
+    // from the motion coprocessor — activityRecognitionInterval does NOT throttle
+    // these on iOS. The result is rapid oscillation between 'still/33' and
+    // 'unknown/100' that creates dozens of triggers per minute while stationary.
+    //
+    // Filter rules:
+    //   • 'unknown' — iOS has no classification at all; not actionable
+    //   • confidence < 75 — below this threshold the reading is unreliable noise
+    //
+    // Travel-mode detection only needs in_vehicle/on_bicycle > 70%, so both
+    // filters are safe — no meaningful events are lost.
+    if (event.activity == 'unknown' || event.confidence < 75) return;
 
     // Activity change MUST always run — it's how we detect travel transitions.
     // Only count it as a trigger when we are in presence-detection mode;

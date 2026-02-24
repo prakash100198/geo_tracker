@@ -131,6 +131,9 @@ void headlessTask(bg.HeadlessEvent headlessEvent) async {
     case bg.Event.ACTIVITYCHANGE:
       final activity = headlessEvent.event as bg.ActivityChangeEvent;
 
+      // iOS quality filter — same as in the UI handler.
+      if (activity.activity == 'unknown' || activity.confidence < 75) break;
+
       // Activity change MUST always run to detect travel transitions.
       // Only count as trigger in presence-detection mode.
       if (!isTraveling) {
@@ -248,6 +251,20 @@ Future<void> _sendHeadlessHeartbeat(
   bg.Location location,
   int currentHeartbeats,
 ) async {
+  // Global minimum cooldown guard — same as in the UI handler.
+  final lastHeartbeatMs = prefs.getInt('last_heartbeat_time');
+  if (lastHeartbeatMs != null) {
+    final timeSinceLast = DateTime.now().difference(
+      DateTime.fromMillisecondsSinceEpoch(lastHeartbeatMs),
+    );
+    if (timeSinceLast.inMinutes < 2) {
+      print(
+        '   ❌ HEADLESS SKIP: Duplicate prevented (${timeSinceLast.inSeconds}s since last heartbeat)',
+      );
+      return;
+    }
+  }
+
   // Accuracy gate: skip only truly junk cell-tower-only fixes
   // 1000m matches Radar.io's hard cutoff
   final accuracy = location.coords.accuracy;
