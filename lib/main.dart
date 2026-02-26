@@ -131,9 +131,6 @@ void headlessTask(bg.HeadlessEvent headlessEvent) async {
     case bg.Event.ACTIVITYCHANGE:
       final activity = headlessEvent.event as bg.ActivityChangeEvent;
 
-      // iOS quality filter — same as in the UI handler.
-      if (activity.activity == 'unknown' || activity.confidence < 75) break;
-
       // Activity change MUST always run to detect travel transitions.
       // Only count as trigger in presence-detection mode.
       if (!isTraveling) {

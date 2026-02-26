@@ -606,19 +606,6 @@ class _HomePageState extends ConsumerState<HomePage> {
   void _onActivityChange(bg.ActivityChangeEvent event) async {
     if (_isInitializing) return;
 
-    // iOS quality filter: CMMotionActivityManager fires live updates continuously
-    // from the motion coprocessor — activityRecognitionInterval does NOT throttle
-    // these on iOS. The result is rapid oscillation between 'still/33' and
-    // 'unknown/100' that creates dozens of triggers per minute while stationary.
-    //
-    // Filter rules:
-    //   • 'unknown' — iOS has no classification at all; not actionable
-    //   • confidence < 75 — below this threshold the reading is unreliable noise
-    //
-    // Travel-mode detection only needs in_vehicle/on_bicycle > 70%, so both
-    // filters are safe — no meaningful events are lost.
-    if (event.activity == 'unknown' || event.confidence < 75) return;
-
     // Activity change MUST always run — it's how we detect travel transitions.
     // Only count it as a trigger when we are in presence-detection mode;
     // during travel these are background infrastructure events.
